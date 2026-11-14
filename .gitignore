@@ -8,3 +8,5 @@ run/
 *.ipr
 *.iws
 .DS_Store
+logs/
+runs/

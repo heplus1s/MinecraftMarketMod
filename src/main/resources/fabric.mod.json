@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "marketmod",
+  "version": "${version}",
+  "name": "Market",
+  "description": "Player listings for items and land on Fabric 1.20.1. Settlement pays the seller. Server land sales credit the land-grant savings account. Vanilla clients can join.",
+  "authors": [
+    "heplus1s"
+  ],
+  "contact": {
+    "repo": "https://github.com/heplus1s/MinecraftMarketMod"
+  },
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "dev.jdguo.market.MarketMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.20.1",
+    "java": ">=17",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "bankmod": "*",
+    "landmod": "*",
+    "shopmod": "*"
+  }
+}

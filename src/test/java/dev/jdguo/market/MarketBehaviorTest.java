@@ -1,0 +1,320 @@
+package dev.jdguo.market;
+
+import dev.jdguo.market.api.SettlementResult;
+import dev.jdguo.market.api.ShopPriceApi;
+import com.mojang.brigadier.CommandDispatcher;
+import dev.jdguo.market.command.MarketCommandNames;
+import dev.jdguo.market.command.MarketCommands;
+import dev.jdguo.market.config.MarketConfig;
+import dev.jdguo.market.integrate.ShopPrices;
+import dev.jdguo.market.listing.Checkout;
+import dev.jdguo.market.listing.ChunkRef;
+import dev.jdguo.market.listing.Handoff;
+import dev.jdguo.market.listing.LandPermit;
+import dev.jdguo.market.listing.Listing;
+import dev.jdguo.market.listing.ListingGuard;
+import dev.jdguo.market.listing.ListingKind;
+import dev.jdguo.market.listing.ListingStatus;
+import dev.jdguo.market.listing.MarketBook;
+import dev.jdguo.market.listing.Payments;
+import dev.jdguo.market.listing.PriceMode;
+import dev.jdguo.market.listing.Proceeds;
+import dev.jdguo.market.listing.SaleReference;
+import dev.jdguo.market.service.MarketDesk;
+import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigInteger;
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class MarketBehaviorTest {
+    private static final UUID ALICE = UUID.fromString("aaaaaaaa-0000-0000-0000-000000000001");
+    private static final UUID BOB = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000002");
+    private static final String OVERWORLD = "minecraft:overworld";
+
+    @AfterEach
+    void resetShop() {
+        ShopPrices.resetForTests();
+    }
+
+    @Test
+    void saveKeepsUnknownKeysAndDoesNotDropAListingItCannotRead() {
+        Listing listing = item(ALICE, 4, 10);
+        NbtCompound tag = listing.write();
+        tag.putString("FutureNote", "keep-me");
+        Listing reread = Listing.read(tag);
+        assertEquals("keep-me", reread.extraString("FutureNote"));
+        assertEquals("keep-me", reread.write().getString("FutureNote"));
+
+        MarketBook book = new MarketBook();
+        assertTrue(book.add(reread));
+        NbtCompound root = book.write();
+        root.putString("FutureRoot", "yes");
+        NbtCompound bad = new NbtCompound();
+        bad.putString("Kind", "later");
+        NbtList listings = root.getList("listings", 10);
+        listings.add(bad);
+        root.put("listings", listings);
+
+        MarketBook loaded = MarketBook.read(root);
+        assertEquals(1, loaded.size());
+        assertEquals(1, loaded.preservedListings());
+        assertEquals("yes", loaded.extraString("FutureRoot"));
+        assertEquals("keep-me", loaded.get(listing.id()).orElseThrow().extraString("FutureNote"));
+        NbtCompound again = loaded.write();
+        assertEquals("yes", again.getString("FutureRoot"));
+        assertTrue(again.getList("listings", 10).toString().contains("later"));
+    }
+
+    @Test
+    void shortIdAndFullIdBothResolve() {
+        MarketBook book = new MarketBook();
+        Listing first = item(UUID.fromString("aaaaaaaa-0000-0000-0000-000000000001"), ALICE, 1, 3);
+        Listing second = item(UUID.fromString("aaaaaaaa-0000-0000-0000-000000000002"), ALICE, 1, 4);
+        book.add(first);
+        book.add(second);
+        assertTrue(book.find("aaaaaaaa").ambiguous());
+        assertEquals(first.id(), book.find(first.id().toString()).listing().id());
+        assertEquals(second.id(), book.find("aaaaaaaa000000000000000000000002").listing().id());
+        assertNull(book.find("zzzz").listing());
+    }
+
+    @Test
+    void listedParcelBlocksGiftsAndAllowsItsOwnSaleReference() {
+        UUID parcel = UUID.randomUUID();
+        ChunkRef here = new ChunkRef(OVERWORLD, 2, -3);
+        ChunkRef other = new ChunkRef(OVERWORLD, 3, -3);
+        Listing parcelSale = Listing.land(UUID.randomUUID(), ListingKind.PARCEL, ALICE, "Alice", Proceeds.SELLER,
+                BigInteger.valueOf(50), "note", parcel, "家园", OVERWORLD, List.of(here, other));
+        MarketBook book = new MarketBook();
+        book.add(parcelSale);
+        ListingGuard guard = new ListingGuard(book);
+
+        assertFalse(guard.allowsParcelTransfer(parcel, ""));
+        assertFalse(guard.allowsParcelTransfer(parcel, "sale:" + UUID.randomUUID()));
+        assertTrue(guard.allowsParcelTransfer(parcel, SaleReference.of(parcelSale.id())));
+        assertFalse(guard.allowsAbandon(parcel));
+        assertFalse(guard.allowsJoin(parcel));
+        assertFalse(guard.allowsMerge(parcel, UUID.randomUUID()));
+        assertTrue(guard.allowsAbandon(UUID.randomUUID()));
+        assertFalse(guard.allowsSplit(parcel, List.of(here)));
+    }
+
+    @Test
+    void chunkSaleCanBeSplitOnlyWhileThatPurchaseIsInProgress() {
+        UUID parcel = UUID.randomUUID();
+        ChunkRef sold = new ChunkRef(OVERWORLD, 0, 0);
+        ChunkRef kept = new ChunkRef(OVERWORLD, 1, 0);
+        Listing sale = Listing.land(UUID.randomUUID(), ListingKind.CHUNKS, ALICE, "Alice", Proceeds.SELLER,
+                BigInteger.valueOf(8), "note", parcel, "", OVERWORLD, List.of(sold));
+        MarketBook book = new MarketBook();
+        book.add(sale);
+        ListingGuard guard = new ListingGuard(book);
+
+        assertFalse(guard.allowsChunkTransfer(parcel, sold, ""));
+        assertTrue(guard.allowsChunkTransfer(parcel, sold, SaleReference.of(sale.id())));
+        assertFalse(guard.allowsChunkTransfer(parcel, kept, SaleReference.of(sale.id())));
+        assertFalse(guard.allowsSplit(parcel, List.of(sold)));
+        assertFalse(LandPermit.call(SaleReference.of(sale.id()), () -> guard.allowsSplit(parcel, List.of(sold, kept))));
+        assertTrue(LandPermit.call(SaleReference.of(sale.id()), () -> guard.allowsSplit(parcel, List.of(sold))));
+    }
+
+    @Test
+    void playerTradePaysTheSellerAndServerLandPaysTheLandGrantAccount() {
+        MarketBook items = new MarketBook();
+        Listing goods = item(ALICE, 4, 10);
+        items.add(goods);
+        FakePayments payments = new FakePayments();
+        Checkout.Outcome bought = Checkout.buy(items, goods.id(), BOB, "Bob", goods.customTotal(), payments,
+                (listing, buyer, name) -> Handoff.Outcome.success(null), () -> {});
+        assertTrue(bought.ok());
+        assertEquals(1, payments.sellerPays);
+        assertEquals(0, payments.grantPays);
+        assertTrue(items.get(goods.id()).isEmpty());
+
+        MarketBook land = new MarketBook();
+        Listing grant = Listing.land(UUID.randomUUID(), ListingKind.PARCEL, ALICE, "Alice", Proceeds.LAND_GRANT,
+                BigInteger.valueOf(80), "note", UUID.randomUUID(), "出让", OVERWORLD, List.of(new ChunkRef(OVERWORLD, 1, 1)));
+        land.add(grant);
+        FakePayments grantPay = new FakePayments();
+        Checkout.Outcome sold = Checkout.buy(land, grant.id(), BOB, "Bob", grant.customTotal(), grantPay,
+                (listing, buyer, name) -> Handoff.Outcome.success(null), () -> {});
+        assertTrue(sold.ok());
+        assertEquals(0, grantPay.sellerPays);
+        assertEquals(1, grantPay.grantPays);
+        assertTrue(grantPay.lastReference.startsWith("sale:"));
+    }
+
+    @Test
+    void failedPaymentDoesNotTakeTheGoodsAndFailedDeliveryRefunds() {
+        MarketBook book = new MarketBook();
+        Listing goods = item(ALICE, 2, 5);
+        book.add(goods);
+        FakePayments poor = new FakePayments();
+        poor.failSeller = true;
+        Checkout.Outcome denied = Checkout.buy(book, goods.id(), BOB, "Bob", goods.customTotal(), poor,
+                (listing, buyer, name) -> Handoff.Outcome.success(null), () -> {});
+        assertEquals("insufficient_funds", denied.code());
+        assertEquals(ListingStatus.OPEN, book.get(goods.id()).orElseThrow().status());
+        assertEquals(0, poor.refundSeller);
+
+        FakePayments paid = new FakePayments();
+        Checkout.Outcome blocked = Checkout.buy(book, goods.id(), BOB, "Bob", goods.customTotal(), paid,
+                (listing, buyer, name) -> Handoff.Outcome.failure("gate"), () -> {});
+        assertEquals("gate", blocked.code());
+        assertEquals(1, paid.refundSeller);
+        assertEquals(ListingStatus.OPEN, book.get(goods.id()).orElseThrow().status());
+
+        FakePayments stuck = new FakePayments();
+        stuck.failRefund = true;
+        Checkout.Outcome held = Checkout.buy(book, goods.id(), BOB, "Bob", goods.customTotal(), stuck,
+                (listing, buyer, name) -> Handoff.Outcome.failure("delivery"), () -> {});
+        assertEquals("refund_failed", held.code());
+        assertEquals(1, book.deals().size());
+        assertEquals(ListingStatus.RESERVED, book.get(goods.id()).orElseThrow().status());
+    }
+
+    @Test
+    void staleLandDropsTheListingAfterRefundAndAReservedDealIsReleasedOnRecovery() {
+        MarketBook book = new MarketBook();
+        Listing grant = Listing.land(UUID.randomUUID(), ListingKind.CHUNKS, ALICE, "Alice", Proceeds.LAND_GRANT,
+                BigInteger.TEN, "note", UUID.randomUUID(), "", OVERWORLD, List.of(new ChunkRef(OVERWORLD, 4, 4)));
+        book.add(grant);
+        FakePayments payments = new FakePayments();
+        Checkout.Outcome stale = Checkout.buy(book, grant.id(), BOB, "Bob", BigInteger.TEN, payments,
+                (listing, buyer, name) -> Handoff.Outcome.drop("stale"), () -> {});
+        assertEquals("stale", stale.code());
+        assertEquals(1, payments.refundGrant);
+        assertTrue(book.get(grant.id()).isEmpty());
+        assertTrue(book.deals().isEmpty());
+
+        MarketBook waiting = new MarketBook();
+        Listing goods = item(ALICE, 1, 3);
+        waiting.add(goods);
+        waiting.reserve(goods.id(), BOB, "Bob", BigInteger.valueOf(3));
+        FakePayments untouched = new FakePayments();
+        untouched.failSeller = true;
+        untouched.failRefund = true;
+        Checkout.recover(waiting, untouched, (listing, buyer, name) -> {
+            throw new AssertionError("reserved deal must not be delivered");
+        }, () -> {});
+        assertTrue(waiting.deals().isEmpty());
+        assertEquals(ListingStatus.OPEN, waiting.get(goods.id()).orElseThrow().status());
+    }
+
+    @Test
+    void shopReferenceIsOptional() {
+        assertNull(ShopPrices.quote("minecraft:diamond", "note"));
+        ShopPriceApi.install((itemId, currency) -> "minecraft:diamond".equals(itemId) && "note".equals(currency)
+                ? BigInteger.valueOf(12) : null);
+        assertEquals(BigInteger.valueOf(12), ShopPrices.quote("minecraft:diamond", "note"));
+        assertNull(ShopPrices.quote("minecraft:stick", "note"));
+    }
+
+    @Test
+    void configKeepsUnknownKeysAndFallsBackWhenTheCurrencyIdIsWrong() throws Exception {
+        Path path = Files.createTempFile("marketmod", ".json");
+        Files.writeString(path, """
+                {"currency":"NOT VALID","pageSize":3,"future":true}
+                """);
+        MarketConfig read = MarketConfig.read(path);
+        assertEquals("note", read.currency());
+        assertEquals(3, read.pageSize());
+        assertTrue(Files.readString(path).contains("future"));
+    }
+
+    @Test
+    void commandTreeRegistersTheEnglishRoot() throws Exception {
+        CommandDispatcher<ServerCommandSource> dispatcher = new CommandDispatcher<>();
+        Method register = MarketCommands.class.getDeclaredMethod("register", CommandDispatcher.class,
+                Class.forName("net.minecraft.command.CommandRegistryAccess"),
+                Class.forName("net.minecraft.server.command.CommandManager$RegistrationEnvironment"));
+        register.setAccessible(true);
+        register.invoke(null, dispatcher, null, null);
+        assertTrue(dispatcher.getRoot().getChild("market") != null);
+        assertTrue(dispatcher.getRoot().getChild("market").getChild("land") != null);
+        assertTrue(dispatcher.getRoot().getChild("market").getChild("list") != null);
+    }
+
+    @Test
+    void commandsStayAsciiAndPlayerSentencesStayChinese() throws Exception {
+        for (String literal : MarketCommandNames.LITERALS) {
+            assertTrue(literal.matches("[a-z]+"), literal);
+        }
+        for (int i = 0; i < MarketCommandNames.USAGE.length(); i++) {
+            assertTrue(MarketCommandNames.USAGE.charAt(i) < 128);
+        }
+        String hook = MarketDesk.sentence("bank_hook_missing");
+        String grant = MarketDesk.sentence("land_grant_missing");
+        String shop = MarketDesk.sentence("shop_missing");
+        assertTrue(hook.contains("储蓄"));
+        assertTrue(hook.contains("卖方"));
+        assertTrue(grant.contains("土地出让账户"));
+        assertTrue(shop.contains("自定义价格"));
+        assertFalse(hook.contains("P2P"));
+        assertFalse(grant.contains("API"));
+        String mod = Files.readString(Path.of("src/main/resources/fabric.mod.json"));
+        assertTrue(mod.contains("\"id\": \"marketmod\""));
+        assertTrue(mod.contains("\"environment\": \"*\""));
+    }
+
+    private static Listing item(UUID seller, int count, int price) {
+        return item(UUID.randomUUID(), seller, count, price);
+    }
+
+    private static Listing item(UUID id, UUID seller, int count, int price) {
+        NbtCompound item = new NbtCompound();
+        item.putString("id", "minecraft:diamond");
+        item.putInt("Count", count);
+        return Listing.item(id, seller, "Alice", Proceeds.SELLER, PriceMode.CUSTOM,
+                BigInteger.valueOf(price), "note", count, "minecraft:diamond", item);
+    }
+
+    private static final class FakePayments implements Payments {
+        private boolean failSeller;
+        private boolean failRefund;
+        private int sellerPays;
+        private int grantPays;
+        private int refundSeller;
+        private int refundGrant;
+        private String lastReference = "";
+
+        @Override
+        public SettlementResult paySeller(UUID buyer, UUID seller, String currency, BigInteger amount, String reference) {
+            sellerPays++;
+            lastReference = reference;
+            return failSeller ? SettlementResult.fail("insufficient_funds", "") : SettlementResult.ok();
+        }
+
+        @Override
+        public SettlementResult payLandGrant(UUID buyer, String currency, BigInteger amount, String reference) {
+            grantPays++;
+            lastReference = reference;
+            return SettlementResult.ok();
+        }
+
+        @Override
+        public SettlementResult refundSeller(UUID seller, UUID buyer, String currency, BigInteger amount, String reference) {
+            refundSeller++;
+            return failRefund ? SettlementResult.fail("bank_failed", "") : SettlementResult.ok();
+        }
+
+        @Override
+        public SettlementResult refundLandGrant(UUID buyer, String currency, BigInteger amount, String reference) {
+            refundGrant++;
+            return SettlementResult.ok();
+        }
+    }
+}
