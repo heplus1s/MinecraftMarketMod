@@ -8,6 +8,8 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import dev.jdguo.market.message.MarketMessages;
+import dev.jdguo.market.api.SettlementResult;
+import dev.jdguo.market.integrate.BankBridge;
 import dev.jdguo.market.net.MarketSync;
 import dev.jdguo.market.service.MarketDesk;
 import dev.jdguo.market.ui.MarketReply;
@@ -21,6 +23,8 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
@@ -35,6 +39,7 @@ public final class MarketCommands {
     private static void register(CommandDispatcher<ServerCommandSource> dispatcher, CommandRegistryAccess registry, CommandManager.RegistrationEnvironment environment) {
         dispatcher.register(CommandManager.literal(MarketCommandNames.ROOT)
                 .executes(MarketCommands::usage)
+                .then(personalNoteCommands())
                 .then(CommandManager.literal(MarketCommandNames.LIST).requires(MarketCommands::player)
                         .then(CommandManager.literal(MarketCommandNames.SHOP)
                                 .executes(context -> listItem(context, true, 0, 0))
@@ -91,6 +96,70 @@ public final class MarketCommands {
                                 .executes(context -> reply(context, desk(context).search(player(context), "land", "", 1)))
                                 .then(CommandManager.argument("page", IntegerArgumentType.integer(1))
                                         .executes(context -> reply(context, desk(context).search(player(context), "land", "", IntegerArgumentType.getInteger(context, "page"))))))));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> personalNoteCommands() {
+        return CommandManager.literal("note").requires(MarketCommands::player)
+                .executes(context -> personalHelp(context))
+                .then(CommandManager.literal("search").executes(context -> personalReply(context,
+                        BankBridge.personalOffers(player(context).getUuid(), null))))
+                .then(CommandManager.literal("view")
+                        .then(CommandManager.argument("name", StringArgumentType.string())
+                                .executes(context -> personalReply(context, BankBridge.personalOffers(
+                                        player(context).getUuid(), StringArgumentType.getString(context, "name"))))))
+                .then(personalQuantity("list", "listPersonal"))
+                .then(personalQuantity("quote", "quotePersonal"))
+                .then(CommandManager.literal("cancel")
+                        .then(CommandManager.argument("name", StringArgumentType.string())
+                                .executes(context -> personalReply(context, BankBridge.personalAmount(
+                                        "listPersonal", player(context).getUuid(),
+                                        StringArgumentType.getString(context, "name"), BigInteger.ZERO)))))
+                .then(CommandManager.literal("buy")
+                        .then(CommandManager.argument("name", StringArgumentType.string())
+                                .then(CommandManager.argument("count", LongArgumentType.longArg(1))
+                                        .then(CommandManager.argument("max-total", StringArgumentType.word())
+                                                .executes(MarketCommands::buyPersonal)))));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> personalQuantity(String command, String hook) {
+        return CommandManager.literal(command)
+                .then(CommandManager.argument("name", StringArgumentType.string())
+                        .then(CommandManager.argument("count", LongArgumentType.longArg(1))
+                                .executes(context -> personalReply(context, BankBridge.personalAmount(
+                                        hook, player(context).getUuid(), StringArgumentType.getString(context, "name"),
+                                        BigInteger.valueOf(LongArgumentType.getLong(context, "count")))))));
+    }
+
+    private static int buyPersonal(CommandContext<ServerCommandSource> context) {
+        String raw = StringArgumentType.getString(context, "max-total");
+        if (!raw.matches("[0-9]{1,32}(\\.[0-9]{1,4})?")) {
+            return personalReply(context, SettlementResult.fail("par", ""));
+        }
+        return personalReply(context, BankBridge.buyPersonal(player(context).getUuid(),
+                StringArgumentType.getString(context, "name"),
+                BigInteger.valueOf(LongArgumentType.getLong(context, "count")), new BigDecimal(raw)));
+    }
+
+    private static int personalHelp(CommandContext<ServerCommandSource> context) {
+        context.getSource().sendFeedback(() -> Text.literal(
+                "个人币市场：search 浏览，view 查看持有和挂单，list 挂单，cancel 撤单，quote 询价，buy 按最高总价确认买入。"), false);
+        return 1;
+    }
+
+    private static int personalReply(CommandContext<ServerCommandSource> context, SettlementResult result) {
+        String message = result.success() ? result.detail() : switch (result.code()) {
+            case "offer_empty" -> "没有足够数量的单笔挂单。";
+            case "offer_minimum" -> "订单低于 0.0001 银行券，请提高买入数量。";
+            case "offer_price_moved" -> "应付金额超过你的最高总价，请重新询价。";
+            case "funds" -> "持有数量或银行券余额不足。";
+            case "par" -> "数量或银行券金额无效，最高总价最多四位小数。";
+            case "market" -> "银行券当前无法报价。";
+            case "none", "bankrupt" -> "这个个人币不存在或已停止交易。";
+            case "bank_missing", "bank_not_ready", "personal_market_missing" -> "个人币市场需要已加载的新版银行模组。";
+            default -> "银行未能完成这笔操作。";
+        };
+        context.getSource().sendFeedback(() -> Text.literal(message), false);
+        return result.success() ? 1 : 0;
     }
 
     private static LiteralArgumentBuilder<ServerCommandSource> landForms(LiteralArgumentBuilder<ServerCommandSource> node, boolean serverSale) {

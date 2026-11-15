@@ -9,6 +9,7 @@ import dev.jdguo.market.listing.Payments;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.UUID;
 
@@ -70,6 +71,21 @@ public final class BankBridge {
         return PAYMENTS;
     }
 
+    public static SettlementResult personalOffers(UUID player, String name) {
+        return reflect("personalOffers", new Class<?>[]{UUID.class, String.class},
+                new Object[]{player, name}, "personal_market_missing");
+    }
+
+    public static SettlementResult personalAmount(String method, UUID player, String name, BigInteger amount) {
+        return reflect(method, new Class<?>[]{UUID.class, String.class, BigInteger.class},
+                new Object[]{player, name, amount}, "personal_market_missing");
+    }
+
+    public static SettlementResult buyPersonal(UUID player, String name, BigInteger amount, BigDecimal maximum) {
+        return reflect("buyPersonal", new Class<?>[]{UUID.class, String.class, BigInteger.class, BigDecimal.class},
+                new Object[]{player, name, amount, maximum}, "personal_market_missing");
+    }
+
     private static SettlementResult reflect(String name, Class<?>[] types, Object[] args, String missingCode) {
         if (!FabricLoader.getInstance().isModLoaded("bankmod")) {
             return SettlementResult.fail("bank_missing", "");
@@ -97,7 +113,7 @@ public final class BankBridge {
             boolean success = (boolean) result.getClass().getMethod("success").invoke(result);
             String code = String.valueOf(result.getClass().getMethod("code").invoke(result));
             if (success) {
-                return SettlementResult.ok();
+                return new SettlementResult(true, "ok", successDetail(result));
             }
             if (code == null || code.isBlank() || "null".equals(code)) {
                 code = "bank_failed";
@@ -107,4 +123,12 @@ public final class BankBridge {
             return SettlementResult.fail("bank_failed", "");
         }
     }
+    private static String successDetail(Object result) throws ReflectiveOperationException {
+        try {
+            return String.valueOf(result.getClass().getMethod("message").invoke(result));
+        } catch (NoSuchMethodException ignored) {
+            return "";
+        }
+    }
+
 }

@@ -134,3 +134,19 @@ Listings, escrowed items, undelivered items, and unfinished payments are stored 
 ```
 
 可安装的文件在 `build/libs/marketmod-1.0.0.jar`。它不包含银行、领地或商店模组。这三个模组没有安装时，市场本身仍然能加载。
+
+## 个人币市场
+
+个人币按银行当前牌价挂牌，卖家自行指定上架数量。挂单在银行账本中持久保存，卖家离线时仍可成交。每次买入匹配一笔能足额交割的挂单。报价以银行券为单位，实际成交金额保留至四位小数。
+
+- `/market note search` 浏览当前可买入的个人币。
+- `/market note view <币名>` 查看自己的持有量、挂单数量和可买入的最大单笔数量。
+- `/market note list <币名> <数量>` 设置自己的挂单数量。
+- `/market note cancel <币名>` 撤销自己的挂单。
+- `/market note quote <币名> <数量>` 查询当前应付总额。
+- `/market note buy <币名> <数量> <最高总价>` 确认买入。超过最高总价时整笔拒绝。
+- `/bank note transfer <币名> <在线玩家> <数量>` 直接转让未挂单的个人币。
+
+含中文的币名用双引号包起来，例如 `/market note list "泉" 64`。
+
+个人币挂单需要配套的银行核心。货币发行、储蓄、转账和通兑仍在银行办理。
