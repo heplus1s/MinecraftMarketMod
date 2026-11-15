@@ -52,6 +52,11 @@ public final class MarketDesk {
     }
 
     public MarketReply listItem(ServerPlayerEntity player, boolean shop, long price, int requested) {
+        return listItem(player, shop, price, requested, MarketConfig.get().currency());
+    }
+
+    public MarketReply listItem(ServerPlayerEntity player, boolean shop, long price, int requested, String currency) {
+        if (!dev.jdguo.market.integrate.MarketCurrencies.accepts(currency)) return fail("unknown_currency");
         ItemStack hand = player.getMainHandStack();
         if (hand.isEmpty()) {
             return fail("empty_hand");
@@ -67,7 +72,6 @@ public final class MarketDesk {
             return fail("limit");
         }
         String itemId = net.minecraft.registry.Registries.ITEM.getId(hand.getItem()).toString();
-        String currency = MarketConfig.get().currency();
         BigInteger quote = shop ? ShopPrices.quote(itemId, currency) : null;
         ItemStack listed = hand.split(count);
         Listing listing = Listing.item(UUID.randomUUID(), player.getUuid(), player.getGameProfile().getName(),
@@ -93,6 +97,10 @@ public final class MarketDesk {
     }
 
     public MarketReply listParcel(ServerPlayerEntity player, long price, boolean serverSale) {
+        return listParcel(player, price, serverSale, MarketConfig.get().currency());
+    }
+    public MarketReply listParcel(ServerPlayerEntity player, long price, boolean serverSale, String currency) {
+        if (!dev.jdguo.market.integrate.MarketCurrencies.accepts(currency)) return fail("unknown_currency");
         if (price <= 0) {
             return fail("price");
         }
@@ -104,16 +112,23 @@ public final class MarketDesk {
         if (land == null) {
             return fail("not_claimed");
         }
-        return listLand(player, land, land.chunks(), price, serverSale, true);
+        return listLand(player, land, land.chunks(), price, serverSale, true, currency);
     }
 
     public MarketReply listChunk(ServerPlayerEntity player, long price, boolean serverSale) {
+        return listChunk(player, price, serverSale, MarketConfig.get().currency());
+    }
+    public MarketReply listChunk(ServerPlayerEntity player, long price, boolean serverSale, String currency) {
         int x = player.getBlockX() >> 4;
         int z = player.getBlockZ() >> 4;
-        return listRectangle(player, price, serverSale, x, z, x, z);
+        return listRectangle(player, price, serverSale, x, z, x, z, currency);
     }
 
     public MarketReply listRectangle(ServerPlayerEntity player, long price, boolean serverSale, int x1, int z1, int x2, int z2) {
+        return listRectangle(player, price, serverSale, x1, z1, x2, z2, MarketConfig.get().currency());
+    }
+    public MarketReply listRectangle(ServerPlayerEntity player, long price, boolean serverSale, int x1, int z1, int x2, int z2, String currency) {
+        if (!dev.jdguo.market.integrate.MarketCurrencies.accepts(currency)) return fail("unknown_currency");
         if (price <= 0) {
             return fail("price");
         }
@@ -152,10 +167,13 @@ public final class MarketDesk {
             }
         }
         boolean whole = parcel.same(selected);
-        return listLand(player, parcel, whole ? parcel.chunks() : selected, price, serverSale, whole);
+        return listLand(player, parcel, whole ? parcel.chunks() : selected, price, serverSale, whole, currency);
     }
 
     public MarketReply buy(ServerPlayerEntity player, String id) {
+        return buy(player, id, null);
+    }
+    public MarketReply buy(ServerPlayerEntity player, String id, BigInteger maximumTotal) {
         MarketBook.Lookup lookup = book().find(id);
         if (lookup.listing() == null) {
             return fail(lookup.ambiguous() ? "ambiguous" : "missing");
@@ -174,6 +192,9 @@ public final class MarketDesk {
         } else {
             amount = listing.customTotal();
         }
+        if (!withinMaximum(amount, maximumTotal)) {
+            return fail("price_moved");
+        }
         Checkout.Outcome outcome = Checkout.buy(book(), listing.id(), player.getUuid(), player.getGameProfile().getName(),
                 amount, BankBridge.payments(), data::deliver, data::persistNow);
         if (!outcome.ok()) {
@@ -188,6 +209,10 @@ public final class MarketDesk {
         tellSeller(listing, amount);
         MarketSync.broadcast(server);
         return MarketReply.message(true, "bought", boughtLine(listing, amount, outcome.pendingDelivery()));
+    }
+
+    public static boolean withinMaximum(BigInteger amount, BigInteger maximum) {
+        return dev.jdguo.market.listing.ListingTerms.withinMaximum(amount, maximum);
     }
 
     public MarketReply cancel(ServerPlayerEntity player, String id, boolean admin) {
@@ -317,7 +342,7 @@ public final class MarketDesk {
                 + MarketMessages.currency(MarketConfig.get().currency()) + "结算。已经挂出的价格和币种不变。"));
     }
 
-    private MarketReply listLand(ServerPlayerEntity player, LandView land, List<ChunkRef> chunks, long price, boolean serverSale, boolean whole) {
+    private MarketReply listLand(ServerPlayerEntity player, LandView land, List<ChunkRef> chunks, long price, boolean serverSale, boolean whole, String currency) {
         if (!land.owner().equals(player.getUuid())) {
             return fail("not_owner");
         }
@@ -329,7 +354,7 @@ public final class MarketDesk {
         }
         ListingKind kind = whole ? ListingKind.PARCEL : ListingKind.CHUNKS;
         Listing listing = Listing.land(UUID.randomUUID(), kind, player.getUuid(), player.getGameProfile().getName(),
-                serverSale ? Proceeds.LAND_GRANT : Proceeds.SELLER, BigInteger.valueOf(price), MarketConfig.get().currency(),
+                serverSale ? Proceeds.LAND_GRANT : Proceeds.SELLER, BigInteger.valueOf(price), currency,
                 land.id(), land.name(), land.dimension(), chunks);
         if (!book().add(listing)) {
             return fail("listed");
@@ -402,7 +427,7 @@ public final class MarketDesk {
                 + "，价格 " + money(listing.unitPrice(), listing.currency()) + "，" + who + "。");
     }
 
-    private ListingView view(Listing listing, BigInteger shopUnit) {
+    public ListingView view(Listing listing, BigInteger shopUnit) {
         String unit = listing.priceMode() == PriceMode.SHOP ? (shopUnit == null ? "" : shopUnit.toString()) : listing.unitPrice().toString();
         String total;
         if (listing.priceMode() == PriceMode.SHOP) {
@@ -456,6 +481,7 @@ public final class MarketDesk {
             case "missing" -> "没有这块挂牌。请核对编号。";
             case "ambiguous" -> "这个编号对应多块挂牌。请把编号写得更完整。";
             case "self" -> "不能购买自己的挂牌。";
+            case "price_moved" -> "当前总价超过确认时的最高总价，未扣款。请刷新报价后重新确认。";
             case "price" -> "价格必须是正整数。";
             case "reserved" -> "这块挂牌正在结算，请稍后再试。";
             case "bank_missing" -> "银行模组没有加载，货款无法结算。";

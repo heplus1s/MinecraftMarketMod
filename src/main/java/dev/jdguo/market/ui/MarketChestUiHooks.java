@@ -42,6 +42,10 @@ public final class MarketChestUiHooks {
         return MarketDesk.get(player.getServer()).listItem(player, shopPrice, customPrice, count);
     }
 
+    public static MarketReply listHeld(ServerPlayerEntity player, boolean shopPrice, long customPrice, int count, String currency) {
+        return MarketDesk.get(player.getServer()).listItem(player, shopPrice, customPrice, count, currency);
+    }
+
     public static MarketReply listParcel(ServerPlayerEntity player, long price, boolean serverSale) {
         return MarketDesk.get(player.getServer()).listParcel(player, price, serverSale);
     }

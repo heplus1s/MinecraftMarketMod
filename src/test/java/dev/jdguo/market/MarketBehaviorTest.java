@@ -291,6 +291,8 @@ class MarketBehaviorTest {
         assertTrue(dispatcher.getRoot().getChild("market") != null);
         assertTrue(dispatcher.getRoot().getChild("market").getChild("land") != null);
         assertTrue(dispatcher.getRoot().getChild("market").getChild("list") != null);
+        assertTrue(dispatcher.getRoot().getChild("market").getChild("ui") != null);
+        assertTrue(dispatcher.getRoot().getChild("market").getChild("offer").getChild("currency") != null);
     }
 
     @Test
@@ -313,6 +315,41 @@ class MarketBehaviorTest {
         String mod = Files.readString(Path.of("src/main/resources/fabric.mod.json"));
         assertTrue(mod.contains("\"id\": \"marketmod\""));
         assertTrue(mod.contains("\"environment\": \"*\""));
+    }
+
+    @Test
+    void selectedCurrencySurvivesSaveAndIsUsedForDebitAndRefund() {
+        Listing goods = Listing.item(UUID.randomUUID(), ALICE, "Alice", Proceeds.SELLER, PriceMode.CUSTOM,
+                BigInteger.valueOf(3), "copper", 2, "minecraft:diamond", item(ALICE, 2, 3).item());
+        Listing loaded = Listing.read(goods.write());
+        assertEquals("copper", loaded.currency());
+        MarketBook book = new MarketBook(); book.add(loaded);
+        FakePayments pay = new FakePayments();
+        Checkout.Outcome result = Checkout.buy(book, loaded.id(), BOB, "Bob", loaded.customTotal(), pay,
+                (listing, buyer, name) -> Handoff.Outcome.failure("gate"), () -> {});
+        assertEquals("gate", result.code());
+        assertEquals("copper", pay.paidCurrency);
+        assertEquals("copper", pay.refundedCurrency);
+        assertEquals(ListingStatus.OPEN, book.get(loaded.id()).orElseThrow().status());
+    }
+
+    @Test
+    void quoteMaximumRejectsHigherOrInvalidAmount() {
+        assertTrue(MarketDesk.withinMaximum(BigInteger.TEN, BigInteger.TEN));
+        assertTrue(MarketDesk.withinMaximum(BigInteger.ONE, BigInteger.TEN));
+        assertFalse(MarketDesk.withinMaximum(BigInteger.valueOf(11), BigInteger.TEN));
+        assertFalse(MarketDesk.withinMaximum(BigInteger.ONE, BigInteger.ZERO));
+        assertFalse(MarketDesk.withinMaximum(BigInteger.ZERO, BigInteger.TEN));
+        assertFalse(MarketDesk.withinMaximum(null, BigInteger.TEN));
+    }
+
+    @Test
+    void currencyIdsCannotInjectCommandsOrUseUnsupportedPersonalSyntax() {
+        assertTrue(dev.jdguo.market.integrate.MarketCurrencies.validId("note"));
+        assertTrue(dev.jdguo.market.integrate.MarketCurrencies.validId("custom_2"));
+        assertFalse(dev.jdguo.market.integrate.MarketCurrencies.validId("note buy"));
+        assertFalse(dev.jdguo.market.integrate.MarketCurrencies.validId("personal:123"));
+        assertFalse(dev.jdguo.market.integrate.MarketCurrencies.validId(null));
     }
 
     private static Listing item(UUID seller, int count, int price) {
@@ -342,10 +379,13 @@ class MarketBehaviorTest {
         private int refundSeller;
         private int refundGrant;
         private String lastReference = "";
+        private String paidCurrency;
+        private String refundedCurrency;
 
         @Override
         public SettlementResult paySeller(UUID buyer, UUID seller, String currency, BigInteger amount, String reference) {
             sellerPays++;
+            paidCurrency = currency;
             lastReference = reference;
             return failSeller ? SettlementResult.fail("insufficient_funds", "") : SettlementResult.ok();
         }
@@ -360,6 +400,7 @@ class MarketBehaviorTest {
         @Override
         public SettlementResult refundSeller(UUID seller, UUID buyer, String currency, BigInteger amount, String reference) {
             refundSeller++;
+            refundedCurrency = currency;
             return failRefund ? SettlementResult.fail("bank_failed", "") : SettlementResult.ok();
         }
 

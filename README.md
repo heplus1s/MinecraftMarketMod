@@ -8,9 +8,9 @@ A Fabric 1.20.1 marketplace for player listings of items and land. Listings can 
 
 Item listings are bought in full. Land can be a whole parcel, or some vanilla 16 by 16 chunks split out of a parcel. Nothing smaller than a chunk is sold. Bank-note trading stays in the bank mod.
 
-当前先提供指令。箱子界面这次不做，但会预留接口，以后可以直接接上。可选的独立客户端界面以后放在 MinecraftUIMod。不装界面包也可以进服。原版客户端也能进开了这个模组的专用服务器。
+提供指令及 `/market ui` 原版箱子交易终端。可选的独立客户端交易界面位于 MinecraftUIMod。不装界面包也可以进服并使用核心交易功能。
 
-Commands come first. A chest GUI is not included yet, but the hook is reserved. Optional client UI will live in MinecraftUIMod. Vanilla clients can still join a dedicated server.
+Commands and a vanilla chest trading terminal are available. Optional client UI lives in MinecraftUIMod. Vanilla clients can join a dedicated server and use core trading features.
 
 许可证为 MIT，版权归 heplus1s。
 
@@ -105,9 +105,9 @@ The bank can record savings, but it does not yet offer a public player-to-player
 
 ## 以后的箱子界面和客户端界面
 
-箱子界面的稳定入口是 `dev.jdguo.market.ui.MarketChestUiHooks`。以后的界面只要调用这里的浏览、购买、撤销和挂牌方法，不用再写一套成交。这个模组现在不打开箱子，也不注册箱子界面。
+箱子界面的稳定入口是 `dev.jdguo.market.ui.MarketChestUiHooks`。以后的界面只要调用这里的浏览、购买、撤销和挂牌方法，不用再写一套成交。`/market ui` 使用原版通用箱子协议打开交易界面，不新增客户端专用 ScreenHandler 类型。
 
-The reserved chest entry is `dev.jdguo.market.ui.MarketChestUiHooks`. A later menu calls those methods and does not perform settlement itself. This build opens no chest and registers no screen handler.
+The reserved chest entry is `dev.jdguo.market.ui.MarketChestUiHooks`. A later menu calls those methods and does not perform settlement itself. The built-in terminal opens a vanilla generic chest screen handler.
 
 独立客户端以后放在 MinecraftUIMod。它先向 `marketmod:hello` 报一个版本号，再通过 `marketmod:action` 发送和指令相同的操作。服务端只在客户端声明过频道之后，才从 `marketmod:sync` 和 `marketmod:result` 回传。原版客户端不声明这些频道，所以不会收到它们，进服不受影响。
 
@@ -150,3 +150,17 @@ Listings, escrowed items, undelivered items, and unfinished payments are stored 
 含中文的币名用双引号包起来，例如 `/market note list "泉" 64`。
 
 个人币挂单需要配套的银行核心。货币发行、储蓄、转账和通兑仍在银行办理。
+
+## 交易终端与指定结算货币
+
+`/market ui` 打开原版箱子交易终端，不需要客户端模组。可翻页浏览全部/自己的挂牌，查看卖方、币种和整单金额，选中后再次确认购买或撤销自己的挂牌。点击“挂牌手中物品”设置数量、整数单价和结算货币，再确认托管。关闭或返回不会提交。箱子里的图标不能取出，也不能用快捷移动/数字键绕过点击逻辑。
+
+`/market offer <currency> <price|shop> [count]` 按指定币种挂牌手中物品，例如 `/market offer copper 10 4`。旧 `/market list` 指令保留，继续使用配置默认货币。可选货币读取银行公开配置中的储蓄货币，个人券暂不能作为这类挂牌的付款货币。银行不存在时只提供市场配置默认值；成交仍会明确拒绝，不会伪造余额。
+
+每笔挂牌保存自己的币种；交易、退款和重启恢复都使用该币种，不会跟随之后的默认设置改变，也不会自动换汇。价格继续采用原有正整数规则。客户端可发送 `list <price|shop> <count> <currency>`；土地动作可在参数末尾附币种。`buy <id> <maxTotal>` 支持最高总价保护，当前价格高于确认值即拒绝，不扣款。原版箱子终端也采用该保护。
+
+同步消息增加 `explicitCurrency`、`maximumTotal`、`currencies: [{id,label}]`、`defaultCurrency`、`totalListings` 和 `truncated`。客户端同步最多 256 笔并限制消息长度；超限会标记 `truncated`，不能把截断列表当完整订单簿。原版箱子和聊天搜索仍可逐页访问全部挂牌。界面中的市场挂牌是卖方整单报价，不是连续双边撮合；没有捏造的买盘、成交量或 K 线。
+
+### 验证范围
+
+工作流 `.github/workflows/build.yml` 在推送或 PR 时以 Java 17 运行 `./gradlew build`（含 JUnit）。本次新增测试覆盖挂牌币种保存、按原币扣款/退款、最高总价与非法币种输入。服务器原版客户端的窗口交互、重连、余额不足及银行联调仍需实际启动验证；源码检查或纯逻辑断言不能代替游戏实测。

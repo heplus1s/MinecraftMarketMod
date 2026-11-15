@@ -23,7 +23,7 @@ public final class MarketCommandNames {
     public static final String SERVER = "server";
 
     public static final String USAGE =
-            "Usage: /market list <price> [count] | list shop [count] | buy <id> | cancel <id> | search [page] | search item <item> [page] | search player <name> [page] | search land [page] | search mine [page] | info <id> | price | reload | land list parcel <price> | land list chunk <price> | land list chunks <price> <x1> <z1> <x2> <z2> | land server parcel <price> | land server chunk <price> | land server chunks <price> <x1> <z1> <x2> <z2> | land search [page]";
+            "Usage: /market ui | offer <currency> <price|shop> [count] | list <price> [count] | list shop [count] | buy <id> | cancel <id> | search [page] | search item <item> [page] | search player <name> [page] | search land [page] | search mine [page] | info <id> | price | reload | land list parcel <price> | land list chunk <price> | land list chunks <price> <x1> <z1> <x2> <z2> | land server parcel <price> | land server chunk <price> | land server chunks <price> <x1> <z1> <x2> <z2> | land search [page]";
 
     public static final String[] LITERALS = {
             ROOT, LIST, SHOP, BUY, CANCEL, SEARCH, ITEM, PLAYER, LAND, MINE, INFO, PRICE, RELOAD,

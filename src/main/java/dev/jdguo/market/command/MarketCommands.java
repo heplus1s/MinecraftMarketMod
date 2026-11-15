@@ -40,6 +40,10 @@ public final class MarketCommands {
         dispatcher.register(CommandManager.literal(MarketCommandNames.ROOT)
                 .executes(MarketCommands::usage)
                 .then(personalNoteCommands())
+                .then(CommandManager.literal("ui").requires(MarketCommands::player).executes(context -> {
+                    dev.jdguo.market.ui.MarketChestScreen.open(player(context)); return 1;
+                }))
+                .then(currencyListing())
                 .then(CommandManager.literal(MarketCommandNames.LIST).requires(MarketCommands::player)
                         .then(CommandManager.literal(MarketCommandNames.SHOP)
                                 .executes(context -> listItem(context, true, 0, 0))
@@ -96,6 +100,29 @@ public final class MarketCommands {
                                 .executes(context -> reply(context, desk(context).search(player(context), "land", "", 1)))
                                 .then(CommandManager.argument("page", IntegerArgumentType.integer(1))
                                         .executes(context -> reply(context, desk(context).search(player(context), "land", "", IntegerArgumentType.getInteger(context, "page"))))))));
+    }
+
+    /** Explicit currency path, preserving every old /market list command. */
+    private static LiteralArgumentBuilder<ServerCommandSource> currencyListing() {
+        return CommandManager.literal("offer").requires(MarketCommands::player)
+                .then(CommandManager.argument("currency", StringArgumentType.word())
+                        .suggests((context, builder) -> {
+                            dev.jdguo.market.integrate.MarketCurrencies.options().forEach(o -> builder.suggest(o.id()));
+                            return builder.buildFuture();
+                        })
+                        .then(CommandManager.argument("price", LongArgumentType.longArg(1))
+                                .executes(context -> reply(context, desk(context).listItem(player(context), false,
+                                        LongArgumentType.getLong(context, "price"), 0, StringArgumentType.getString(context, "currency"))))
+                                .then(CommandManager.argument("count", IntegerArgumentType.integer(1, 9999))
+                                        .executes(context -> reply(context, desk(context).listItem(player(context), false,
+                                                LongArgumentType.getLong(context, "price"), IntegerArgumentType.getInteger(context, "count"),
+                                                StringArgumentType.getString(context, "currency"))))))
+                        .then(CommandManager.literal("shop")
+                                .executes(context -> reply(context, desk(context).listItem(player(context), true, 0, 0,
+                                        StringArgumentType.getString(context, "currency"))))
+                                .then(CommandManager.argument("count", IntegerArgumentType.integer(1, 9999))
+                                        .executes(context -> reply(context, desk(context).listItem(player(context), true, 0,
+                                                IntegerArgumentType.getInteger(context, "count"), StringArgumentType.getString(context, "currency")))))));
     }
 
     private static LiteralArgumentBuilder<ServerCommandSource> personalNoteCommands() {
