@@ -42,6 +42,20 @@ public final class ShopPrices {
         return null;
     }
 
+    public static BigDecimal exactQuote(String itemId, String currency, boolean playerBuys) {
+        try {
+            Class<?> shop = Class.forName(ShopPriceApi.SHOP_CLASS);
+            Object quote = shop.getMethod("quoteEach", String.class, String.class, boolean.class)
+                    .invoke(null, itemId, currency, playerBuys);
+            return quote instanceof BigDecimal amount && amount.signum() > 0 ? amount : null;
+        } catch (ClassNotFoundException | NoSuchMethodException ignored) {
+            return null;
+        } catch (ReflectiveOperationException error) {
+            MarketMod.LOGGER.warn("Shop sided quote failed for {}", itemId, error);
+            return null;
+        }
+    }
+
     public static void resetForTests() {
         shopLookedUp = false;
         shopMethod = null;

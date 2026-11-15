@@ -20,6 +20,14 @@ import java.util.UUID;
 public final class BankBridge {
     private static final Payments PAYMENTS = new Payments() {
         @Override
+        public SettlementResult receipt(String reference) {
+            if (BankSettlement.installed() != null || LandGrantAccount.installed() != null) {
+                return SettlementResult.fail("receipt_unavailable", "");
+            }
+            return reflect("marketReceipt", new Class<?>[]{String.class}, new Object[]{reference}, "receipt_unavailable");
+        }
+
+        @Override
         public SettlementResult paySeller(UUID buyer, UUID seller, String currency, BigInteger amount, String reference) {
             BankSettlement installed = BankSettlement.installed();
             if (installed != null) {

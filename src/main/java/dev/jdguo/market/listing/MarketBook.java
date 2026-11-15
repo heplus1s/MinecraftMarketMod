@@ -4,7 +4,10 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.MathContext;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -129,7 +132,7 @@ public final class MarketBook {
         UUID dealId = UUID.randomUUID();
         listing.reserve(buyer);
         Deal deal = new Deal(dealId, listing.id(), buyer, buyerName, listing.seller(), amount, listing.currency(),
-                listing.proceeds(), SaleReference.of(listing.id()), SaleReference.refund(dealId), Deal.Stage.RESERVED);
+                listing.proceeds(), SaleReference.payment(dealId), SaleReference.refund(dealId), Deal.Stage.RESERVED);
         deals.put(dealId, deal);
         return deal;
     }
@@ -304,6 +307,54 @@ public final class MarketBook {
         }
     }
 
+    public BigDecimal recentItemUnitPrice(String itemId, String currency, long now) {
+        long cutoff = now - Duration.ofHours(24).toMillis();
+        List<PriceSample> samples = new ArrayList<>();
+        Set<Set<UUID>> counterparties = new java.util.HashSet<>();
+        long volume = 0;
+        for (NbtCompound trade : trades) {
+            int count = trade.getInt("Count");
+            if (!trade.getBoolean("IndependentPrice") || count <= 0
+                    || !itemId.equals(trade.getString("ItemId")) || !currency.equals(trade.getString("Currency"))
+                    || trade.getLong("At") < cutoff || trade.getLong("At") > now
+                    || !trade.containsUuid("Buyer") || !trade.containsUuid("Seller")) {
+                continue;
+            }
+            UUID buyer = trade.getUuid("Buyer");
+            UUID seller = trade.getUuid("Seller");
+            if (buyer.equals(seller)) {
+                continue;
+            }
+            BigDecimal total;
+            try {
+                total = new BigDecimal(trade.getString("Amount"));
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            if (total.signum() <= 0) {
+                continue;
+            }
+            counterparties.add(Set.of(buyer, seller));
+            samples.add(new PriceSample(total.divide(BigDecimal.valueOf(count), MathContext.DECIMAL128), count));
+            volume += count;
+        }
+        if (volume < 16 || counterparties.size() < 3) {
+            return null;
+        }
+        samples.sort(Comparator.comparing(PriceSample::unit));
+        long accumulated = 0;
+        for (PriceSample sample : samples) {
+            accumulated += sample.quantity();
+            if (accumulated >= (volume + 1) / 2) {
+                return sample.unit();
+            }
+        }
+        return null;
+    }
+
+    private record PriceSample(BigDecimal unit, int quantity) {
+    }
+
     private void trimTrades() {
         while (trades.size() > TRADE_LIMIT) {
             trades.remove(0);
@@ -341,6 +392,8 @@ public final class MarketBook {
         tag.putString("ItemId", listing == null ? "" : listing.itemId());
         tag.putInt("Count", listing == null ? 0 : listing.count());
         tag.putLong("At", System.currentTimeMillis());
+        tag.putBoolean("IndependentPrice", listing != null && listing.kind() == ListingKind.ITEM
+                && listing.priceMode() == PriceMode.CUSTOM && listing.item().getCompound("tag").isEmpty());
         return tag;
     }
 

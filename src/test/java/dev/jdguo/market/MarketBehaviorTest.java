@@ -154,7 +154,7 @@ class MarketBehaviorTest {
         assertTrue(sold.ok());
         assertEquals(0, grantPay.sellerPays);
         assertEquals(1, grantPay.grantPays);
-        assertTrue(grantPay.lastReference.startsWith("sale:"));
+        assertTrue(grantPay.lastReference.startsWith("market-pay:"));
     }
 
     @Test
@@ -212,6 +212,51 @@ class MarketBehaviorTest {
         }, () -> {});
         assertTrue(waiting.deals().isEmpty());
         assertEquals(ListingStatus.OPEN, waiting.get(goods.id()).orElseThrow().status());
+    }
+
+    @Test
+    void startupRecoversDebitsAndRecognizesAlreadyPostedRefunds() {
+        MarketBook book = new MarketBook();
+        Listing goods = item(ALICE, 1, 3);
+        book.add(goods);
+        var deal = book.reserve(goods.id(), BOB, "Bob", BigInteger.valueOf(3));
+        FakePayments payments = new FakePayments();
+        payments.recorded = java.util.Set.of(deal.reference());
+        MarketBook reloaded = MarketBook.read(book.write());
+        Checkout.recover(reloaded, payments, (listing, buyer, name) -> Handoff.Outcome.success(null), () -> {});
+        assertTrue(reloaded.deals().isEmpty());
+        assertTrue(reloaded.get(goods.id()).isEmpty());
+        assertEquals(0, payments.sellerPays);
+
+        book.markPaid(deal.id());
+        payments.recorded = java.util.Set.of(deal.reference(), deal.refundReference());
+        Checkout.recover(book, payments, (listing, buyer, name) -> {
+            throw new AssertionError("refunded order must not deliver");
+        }, () -> {});
+        assertTrue(book.deals().isEmpty());
+        assertEquals(ListingStatus.OPEN, book.get(goods.id()).orElseThrow().status());
+        assertEquals(0, payments.refundSeller);
+        var retry = book.reserve(goods.id(), BOB, "Bob", BigInteger.valueOf(3));
+        assertFalse(deal.reference().equals(retry.reference()));
+    }
+
+    @Test
+    void referenceUsesWeightedCompletedStandardItemTradesInTheSameCurrency() {
+        MarketBook book = new MarketBook();
+        for (int index = 0; index < 3; index++) {
+            int count = index == 1 ? 20 : 4;
+            int price = 2 + index;
+            Listing listing = item(UUID.randomUUID(), UUID.randomUUID(), count, price);
+            book.add(listing);
+            var deal = book.reserve(listing.id(), UUID.randomUUID(), "Buyer", BigInteger.valueOf(count * price));
+            book.markPaid(deal.id());
+            book.complete(deal.id(), null);
+        }
+        MarketBook restored = MarketBook.read(book.write());
+        long now = System.currentTimeMillis();
+        assertEquals(new java.math.BigDecimal("3"), restored.recentItemUnitPrice("minecraft:diamond", "note", now));
+        assertNull(restored.recentItemUnitPrice("minecraft:diamond", "copper", now));
+        assertNull(restored.recentItemUnitPrice("minecraft:diamond", "note", now + 86_400_001));
     }
 
     @Test
@@ -283,6 +328,13 @@ class MarketBehaviorTest {
     }
 
     private static final class FakePayments implements Payments {
+        private java.util.Set<String> recorded = java.util.Set.of();
+
+        @Override
+        public SettlementResult receipt(String reference) {
+            return recorded.contains(reference) ? SettlementResult.ok() : SettlementResult.fail("unrecorded", "");
+        }
+
         private boolean failSeller;
         private boolean failRefund;
         private int sellerPays;

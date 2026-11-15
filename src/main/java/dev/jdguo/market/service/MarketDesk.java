@@ -280,6 +280,12 @@ public final class MarketDesk {
         lines.add(summary(listing));
         if (listing.kind() == ListingKind.ITEM) {
             lines.add(MarketMessages.line("编号 " + listing.id() + "。一次买下整笔，不能只买一部分。"));
+            var bid = ShopPrices.exactQuote(listing.itemId(), listing.currency(), false);
+            var ask = ShopPrices.exactQuote(listing.itemId(), listing.currency(), true);
+            if (bid != null && ask != null) {
+                lines.add(MarketMessages.line("商店每件收购 " + bid.toPlainString() + "，出售 "
+                        + ask.toPlainString() + " " + MarketMessages.currency(listing.currency()) + "。"));
+            }
         } else {
             lines.add(MarketMessages.line(MarketMessages.dimension(listing.dimension()) + "，共 " + listing.chunks().size()
                     + " 个区块。最小单位是原版 16×16 区块。编号 " + listing.id() + "。"));

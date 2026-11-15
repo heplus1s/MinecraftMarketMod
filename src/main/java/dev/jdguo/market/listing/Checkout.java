@@ -49,6 +49,9 @@ public final class Checkout {
         persist.run();
         SettlementResult paid = charge(listing, buyer, amount, deal, payments);
         if (!paid.success()) {
+            if ("bank_pending".equals(paid.code()) || "bank_failed".equals(paid.code())) {
+                return Outcome.fail(paid.code());
+            }
             book.abort(deal.id());
             persist.run();
             return Outcome.fail(paid.code());
@@ -74,10 +77,27 @@ public final class Checkout {
 
     public static void recover(MarketBook book, Payments payments, Handoff handoff, Runnable persist) {
         for (Deal deal : book.deals()) {
-            if (deal.stage() == Deal.Stage.RESERVED) {
+            SettlementResult refundReceipt = payments.receipt(deal.refundReference());
+            if (refundReceipt.success()) {
                 book.abort(deal.id());
                 persist.run();
                 continue;
+            }
+            if (receiptUncertain(refundReceipt)) {
+                continue;
+            }
+            if (deal.stage() == Deal.Stage.RESERVED) {
+                SettlementResult debitReceipt = payments.receipt(deal.reference());
+                if (receiptUncertain(debitReceipt)) {
+                    continue;
+                }
+                if (!debitReceipt.success()) {
+                    book.abort(deal.id());
+                    persist.run();
+                    continue;
+                }
+                book.markPaid(deal.id());
+                persist.run();
             }
             Listing listing = book.get(deal.listingId()).orElse(null);
             if (listing == null) {
@@ -114,6 +134,11 @@ public final class Checkout {
             }
             persist.run();
         }
+    }
+
+    private static boolean receiptUncertain(SettlementResult receipt) {
+        return !receipt.success() && !"unrecorded".equals(receipt.code())
+                && !"receipt_unavailable".equals(receipt.code());
     }
 
     private static Outcome undo(MarketBook book, Listing listing, UUID buyer, BigInteger amount, Deal deal,

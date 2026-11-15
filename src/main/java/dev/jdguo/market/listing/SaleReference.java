@@ -15,6 +15,10 @@ public final class SaleReference {
         return "sale:" + listingId;
     }
 
+    public static String payment(UUID dealId) {
+        return "market-pay:" + dealId;
+    }
+
     public static String refund(UUID dealId) {
         return "refund:" + dealId;
     }

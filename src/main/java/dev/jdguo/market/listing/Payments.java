@@ -10,6 +10,10 @@ import java.util.UUID;
  * methods. Server land sales use the land-grant methods.
  */
 public interface Payments {
+    default SettlementResult receipt(String reference) {
+        return SettlementResult.fail("receipt_unavailable", "");
+    }
+
     SettlementResult paySeller(UUID buyer, UUID seller, String currency, BigInteger amount, String reference);
 
     SettlementResult payLandGrant(UUID buyer, String currency, BigInteger amount, String reference);
