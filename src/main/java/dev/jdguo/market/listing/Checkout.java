@@ -76,13 +76,21 @@ public final class Checkout {
         boolean waiting = pending != null && !pending.isEmpty();
         // Flush external handoff state while the recovery journal is still PAID.
         persist.run();
+        if (!finalizeDelivered(deal, payments)) return Outcome.fail("delivery_pending");
         book.complete(deal.id(), pending);
         persist.run();
         return new Outcome(true, "ok", listing, amount, waiting);
     }
 
     public static void recover(MarketBook book, Payments payments, Handoff handoff, Runnable persist) {
+        recover(book, payments, handoff, persist, false);
+    }
+
+    /** Periodic retries are land-only: legacy inventory insertion has no durable delivery receipt. */
+    public static void recover(MarketBook book, Payments payments, Handoff handoff, Runnable persist, boolean landOnly) {
         for (Deal deal : book.deals()) {
+            Listing candidate = book.get(deal.listingId()).orElse(null);
+            if (landOnly && (candidate == null || candidate.kind() == ListingKind.ITEM)) continue;
             SettlementResult refundReceipt = payments.receipt(deal.refundReference());
             if (refundReceipt != null && refundReceipt.success()) {
                 book.abort(deal.id());
@@ -125,6 +133,7 @@ public final class Checkout {
             }
             if (handed != null && handed.ok()) {
                 persist.run();
+                if (!finalizeDelivered(deal, payments)) continue;
                 book.complete(deal.id(), handed.pendingItem());
                 persist.run();
                 continue;
@@ -143,6 +152,19 @@ public final class Checkout {
                 book.abort(deal.id());
             }
             persist.run();
+        }
+    }
+
+    private static boolean finalizeDelivered(Deal deal, Payments payments) {
+        // Only personal-currency system payments reserve a recursive collateral chain.
+        // Player transfers and direct currency grants need no finalizer (old bank API stays compatible).
+        if (deal.proceeds() != Proceeds.LAND_GRANT || !deal.currency().startsWith("personal:")) return true;
+        try {
+            SettlementResult result = payments.finalizePayment(deal.reference());
+            return result != null && result.success();
+        } catch (RuntimeException failure) {
+            MarketMod.LOGGER.error("Could not finalize delivered land payment {}", deal.id(), failure);
+            return false;
         }
     }
 

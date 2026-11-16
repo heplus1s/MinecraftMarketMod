@@ -45,8 +45,10 @@ public final class MarketSavedData extends PersistentState {
         return book;
     }
 
-    public void recover() {
-        Checkout.recover(book, BankBridge.payments(), this::deliver, this::persistNow);
+    public void recover() { recover(false); }
+
+    public void recover(boolean landOnly) {
+        Checkout.recover(book, BankBridge.payments(), this::deliver, this::persistNow, landOnly);
         // Initial purchase orders are private checkout journals, not reusable public offers.
         boolean cleaned = false;
         for (Listing listing : book.all()) {
