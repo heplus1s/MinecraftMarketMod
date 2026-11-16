@@ -67,9 +67,20 @@ public final class MarketSavedData extends PersistentState {
     }
 
     public void deliverPending(ServerPlayerEntity player) {
+        if (book.pendingDeliveryLocked(player.getUuid())) {
+            player.sendMessage(MarketMessages.line("此前物品交付状态需要管理员核对，暂不重复发放。"), false);
+            return;
+        }
         List<MarketBook.PendingItem> owned = book.pendingOf(player.getUuid());
         if (owned.isEmpty()) {
             return;
+        }
+        book.lockPendingDelivery(player.getUuid());
+        try {
+            persistNow(); // Journal first. A crash at any later point must not repeat insertion.
+        } catch (RuntimeException unavailable) {
+            player.sendMessage(MarketMessages.line("待领箱暂时无法保存，未发放物品，请管理员核对存储状态。"), false);
+            return; // Never let a mailbox I/O error reject an otherwise valid player login.
         }
         List<MarketBook.PendingItem> left = new ArrayList<>();
         boolean moved = false;
@@ -91,8 +102,16 @@ public final class MarketSavedData extends PersistentState {
                 remain = true;
             }
         }
-        book.replacePending(player.getUuid(), left);
-        persistNow();
+        try {
+            DurablePlayerInventory.save(player);
+            book.replacePending(player.getUuid(), left);
+            book.unlockPendingDelivery(player.getUuid());
+            persistNow();
+        } catch (RuntimeException unknown) {
+            if (!book.pendingDeliveryLocked(player.getUuid())) book.lockPendingDelivery(player.getUuid());
+            player.sendMessage(MarketMessages.line("物品交付存档未确认，已锁定待核对，不会自动重复发放。"), false);
+            return;
+        }
         if (moved && remain) {
             player.sendMessage(MarketMessages.line("此前未能放入背包的物品已经交付一部分。剩余物品会在背包有空位后继续交付。"), false);
         } else if (moved) {

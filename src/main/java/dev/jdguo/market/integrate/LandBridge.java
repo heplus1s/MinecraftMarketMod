@@ -92,62 +92,22 @@ public final class LandBridge {
             // pending/conflict/missing API are ambiguous: retain the PAID journal, never refund blindly.
             throw new IllegalStateException("Initial land grant outcome: " + result);
         }
-        try {
-            if (listing.kind() == ListingKind.PARCEL) {
-                return transferParcel(server, listing, buyer, buyerName, reference);
-            }
-            return transferChunks(server, listing, buyer, buyerName, reference);
-        } catch (RuntimeException exception) {
-            MarketMod.LOGGER.error("Land transfer failed for listing {}", listing.id(), exception);
-            // A transfer may already have changed ownership before a sync failure.
-            // Let checkout retain its PAID journal; recovery rechecks ownership.
-            throw exception;
+        Object outcome = LandPermit.call(reference, () -> call("marketTransfer",
+                new Class<?>[]{MinecraftServer.class, UUID.class, UUID.class, String.class, UUID.class,
+                        String.class, int[].class, boolean.class, String.class},
+                server, listing.seller(), buyer, buyerName, listing.parcelId(), listing.dimension(),
+                coordinates(listing.chunks()), listing.kind() == ListingKind.PARCEL, reference));
+        String result = String.valueOf(outcome);
+        if ("applied".equals(result)) return Handoff.Outcome.success(null);
+        if (result.startsWith("rejected:")) {
+            return switch (result.substring("rejected:".length())) {
+                case "AT_LIMIT" -> Handoff.Outcome.failure("at_limit");
+                case "GATE" -> Handoff.Outcome.failure("gate");
+                case "SALE_STALE", "NOT_OWNER", "NOT_CLAIMED", "PARCEL_NOT_FOUND" -> Handoff.Outcome.drop("stale");
+                default -> Handoff.Outcome.failure("delivery");
+            };
         }
-    }
-
-    private static Handoff.Outcome transferParcel(MinecraftServer server, Listing listing, UUID buyer, String buyerName, String reference) {
-        LandView now = parcel(server, listing.parcelId());
-        if (now == null) {
-            return Handoff.Outcome.drop("stale");
-        }
-        if (now.owner().equals(buyer) && now.same(listing.chunks())) {
-            return Handoff.Outcome.success(null);
-        }
-        if (!now.owner().equals(listing.seller()) || !now.same(listing.chunks())) {
-            return Handoff.Outcome.drop("stale");
-        }
-        Object result = LandPermit.call(reference, () -> call("transferParcel",
-                new Class<?>[]{MinecraftServer.class, UUID.class, UUID.class, UUID.class, String.class, String.class},
-                server, listing.seller(), listing.parcelId(), buyer, buyerName, reference));
-        return map(result);
-    }
-
-    private static Handoff.Outcome transferChunks(MinecraftServer server, Listing listing, UUID buyer, String buyerName, String reference) {
-        boolean allBuyer = true;
-        boolean allSeller = true;
-        for (ChunkRef chunk : listing.chunks()) {
-            LandView now = at(server, chunk.dimension(), chunk.x(), chunk.z());
-            if (now == null || !now.chunks().contains(chunk)) {
-                return Handoff.Outcome.drop("stale");
-            }
-            if (!now.owner().equals(buyer)) {
-                allBuyer = false;
-            }
-            if (!now.owner().equals(listing.seller()) || !now.id().equals(listing.parcelId())) {
-                allSeller = false;
-            }
-        }
-        if (allBuyer) {
-            return Handoff.Outcome.success(null);
-        }
-        if (!allSeller) {
-            return Handoff.Outcome.drop("stale");
-        }
-        List<Object> keys = claimKeys(listing.chunks());
-        Object result = LandPermit.call(reference, () -> call("transferChunks",
-                new Class<?>[]{MinecraftServer.class, UUID.class, List.class, UUID.class, String.class, String.class},
-                server, listing.seller(), keys, buyer, buyerName, reference));
-        return map(result);
+        throw new IllegalStateException("Land transfer outcome requires reconciliation: " + result);
     }
 
     public static String initialGrantCheck(MinecraftServer server, UUID buyer, String dimension, int[] coordinates) {

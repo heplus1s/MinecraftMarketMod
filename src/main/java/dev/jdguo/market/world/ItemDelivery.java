@@ -22,6 +22,7 @@ public final class ItemDelivery {
             return Handoff.Outcome.success(stack.writeNbt(new NbtCompound()));
         }
         player.getInventory().insertStack(stack);
+        DurablePlayerInventory.save(player);
         if (stack.isEmpty()) {
             return Handoff.Outcome.success(null);
         }
