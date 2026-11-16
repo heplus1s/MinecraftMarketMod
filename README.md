@@ -171,10 +171,10 @@ Listings, escrowed items, undelivered items, and unfinished payments are stored 
 
 ## 实体市场柜台（原版客户端兼容）
 
-管理员（权限等级 2）看准柜台下方的方块执行 `/market outlet set <name>`。
+管理员（权限等级 2）看准上方留有两格空气的实心底座方块执行 `/market outlet set <name>`。
 `name` 使用 1–32 位字母、数字、下划线或连字符。重复同名会迁移网点；
 `/market outlet list` 查看所有网点，`/market outlet remove <name>` 删除。
-柜台使用深色木座、石英台面、绿色饰条和悬浮「市场交易所」招牌，
+柜台使用深色木座、石英台面、蓝色饰条和悬浮「市场交易所」招牌，
 右键基座或柜台打开现有市场箱子终端，仍需确认价格才会扣款。
 无需客户端资源包、新方块或新付款账户；原有命令保持可用，不强制玩家只能在网点交易。
 

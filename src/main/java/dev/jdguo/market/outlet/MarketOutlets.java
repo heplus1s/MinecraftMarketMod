@@ -23,6 +23,7 @@ import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.PersistentState;
 import java.util.*;
 import static net.minecraft.server.command.CommandManager.*;
@@ -62,14 +63,14 @@ public final class MarketOutlets extends PersistentState {
         UseBlockCallback.EVENT.register((player,world,hand,hit) -> {
             if (!(player instanceof ServerPlayerEntity p) || hand != Hand.MAIN_HAND || p.isSpectator()) return ActionResult.PASS;
             var pos=hit.getBlockPos(); String dim=world.getRegistryKey().getValue().toString();
-            for (MarketOutlet point:get(p.getServer()).outlets.values()) if(point.at(dim,pos.getX(),pos.getY(),pos.getZ()) && point.inRange(dim,p.getX(),p.getY(),p.getZ())) {
+            for (MarketOutlet point:get(p.getServer()).outlets.values()) if(!world.getBlockState(pos).isAir() && point.at(dim,pos.getX(),pos.getY(),pos.getZ()) && point.inRange(dim,p.getX(),p.getY(),p.getZ())) {
                 MarketChestScreen.open(p); return ActionResult.SUCCESS;
             }
             return ActionResult.PASS;
         });
         UseEntityCallback.EVENT.register((player,world,hand,entity,hit) -> {
             if (!(player instanceof ServerPlayerEntity p) || hand != Hand.MAIN_HAND || p.isSpectator() || !entity.getCommandTags().contains(TAG)) return ActionResult.PASS;
-            for(MarketOutlet point:get(p.getServer()).outlets.values()) if(entity.getCommandTags().contains(NAME+point.name()) && point.inRange(world.getRegistryKey().getValue().toString(),p.getX(),p.getY(),p.getZ())) {
+            for(MarketOutlet point:get(p.getServer()).outlets.values()) if(!world.getBlockState(new BlockPos(point.x(),point.y(),point.z())).isAir() && entity.getCommandTags().contains(NAME+point.name()) && point.inRange(world.getRegistryKey().getValue().toString(),p.getX(),p.getY(),p.getZ())) {
                 MarketChestScreen.open(p); return ActionResult.SUCCESS;
             }
             return ActionResult.PASS;
@@ -81,7 +82,11 @@ public final class MarketOutlets extends PersistentState {
         if(!MarketOutlet.validName(name)) {source.sendError(Text.literal("网点名称须为1–32位字母、数字、下划线或连字符"));return 0;}
         HitResult hit=p.raycast(5,0,false);
         if(!(hit instanceof BlockHitResult block) || hit.getType()!=HitResult.Type.BLOCK) {source.sendError(Text.literal("请看准柜台下方的实体方块"));return 0;}
-        var pos=block.getBlockPos(); String dim=p.getWorld().getRegistryKey().getValue().toString();
+        var pos=block.getBlockPos();
+        if (!p.getWorld().getBlockState(pos).isSolidBlock(p.getWorld(),pos) || !p.getWorld().getBlockState(pos.up()).isAir() || !p.getWorld().getBlockState(pos.up(2)).isAir()) {
+            source.sendError(Text.literal("柜台需要实心底座，且上方留两格空气")); return 0;
+        }
+        String dim=p.getWorld().getRegistryKey().getValue().toString();
         MarketOutlets state=get(source.getServer());
         for (Entity entity : p.getServerWorld().iterateEntities()) {
             boolean otherCounter = entity.getCommandTags().contains("bankmod_outlet") || entity.getCommandTags().contains("shopmod_outlet");
@@ -91,13 +96,13 @@ public final class MarketOutlets extends PersistentState {
         }
         for(MarketOutlet old:state.outlets.values()) if(!old.name().equals(name) && old.at(dim,pos.getX(),pos.getY(),pos.getZ())) {source.sendError(Text.literal("此位置已有市场网点"));return 0;}
         state.clearLoaded(source.getServer(),name);
-        state.outlets.put(name,new MarketOutlet(name,dim,pos.getX(),pos.getY(),pos.getZ()));state.markDirty();
+        state.outlets.put(name,new MarketOutlet(name,dim,pos.getX(),pos.getY(),pos.getZ()));state.markDirty();source.getServer().getOverworld().getPersistentStateManager().save();
         state.reconcile(source.getServer()); source.sendFeedback(() -> Text.literal("已设置市场柜台 "+name+"；右键打开挂牌交易"),true);return 1;
     }
     private static int remove(ServerCommandSource source,String name) {
         MarketOutlets state=get(source.getServer());
         if(state.outlets.remove(name)==null) {source.sendError(Text.literal("没有这个市场网点"));return 0;}
-        state.markDirty();state.clearLoaded(source.getServer(),name);source.sendFeedback(() -> Text.literal("已移除市场柜台 "+name),true);return 1;
+        state.markDirty();source.getServer().getOverworld().getPersistentStateManager().save();state.clearLoaded(source.getServer(),name);source.sendFeedback(() -> Text.literal("已移除市场柜台 "+name),true);return 1;
     }
     private void clearLoaded(MinecraftServer server,String name) {
         for(ServerWorld world:server.getWorlds()) { List<Entity> remove=new ArrayList<>();
@@ -112,12 +117,12 @@ public final class MarketOutlets extends PersistentState {
             for(Entity e:world.iterateEntities()) if(e.getCommandTags().contains(TAG)) {
                 String key=e.getCommandTags().stream().filter(t->t.startsWith(NAME)).map(t->t.substring(NAME.length())).findFirst().orElse("");
                 MarketOutlet p=outlets.get(key);
-                if(p==null || !p.world().equals(dim) || Math.abs(e.getX()-(p.x()+.5))>.01 || Math.abs(e.getZ()-(p.z()+.5))>.01
+                if(p==null || !p.world().equals(dim) || !world.isChunkLoaded(p.x()>>4,p.z()>>4) || world.getBlockState(new BlockPos(p.x(),p.y(),p.z())).isAir() || Math.abs(e.getX()-(p.x()+.5))>.01 || Math.abs(e.getZ()-(p.z()+.5))>.01
                         || Math.abs(e.getY()-(p.y()+(e instanceof DisplayEntity.TextDisplayEntity ? 3 : 1)))>.01) orphan.add(e);
                 else found.computeIfAbsent(key,k->new ArrayList<>()).add(e);
             }
             orphan.forEach(Entity::discard);
-            for(MarketOutlet p:outlets.values()) if(p.world().equals(dim)&&world.isChunkLoaded(p.x()>>4,p.z()>>4)) {
+            for(MarketOutlet p:outlets.values()) if(p.world().equals(dim)&&world.isChunkLoaded(p.x()>>4,p.z()>>4)&&!world.getBlockState(new BlockPos(p.x(),p.y(),p.z())).isAir()) {
                 List<Entity> parts=found.getOrDefault(p.name(),List.of());
                 if(parts.stream().filter(e->e instanceof InteractionEntity).count()==1 && parts.stream().filter(e->e instanceof DisplayEntity.TextDisplayEntity).count()==1 && parts.stream().filter(e->e instanceof DisplayEntity.BlockDisplayEntity).count()==3) continue;
                 parts.forEach(Entity::discard); spawn(world,p);
@@ -131,11 +136,11 @@ public final class MarketOutlets extends PersistentState {
         NbtCompound n=new NbtCompound();hit.writeNbt(n);n.putFloat("width",1.6f);n.putFloat("height",1.1f);n.putBoolean("response",true);hit.readNbt(n);world.spawnEntity(hit);
         part(world,p,Blocks.DARK_OAK_PLANKS,-.75f,0,-.4f,1.5f,.9f,.8f);
         part(world,p,Blocks.SMOOTH_QUARTZ,-.8f,.9f,-.45f,1.6f,.1f,.9f);
-        part(world,p,Blocks.EMERALD_BLOCK,-.8f,1f,-.46f,1.6f,.05f,.06f);
+        part(world,p,Blocks.LAPIS_BLOCK,-.8f,1f,-.46f,1.6f,.05f,.06f);
         DisplayEntity.TextDisplayEntity text=new DisplayEntity.TextDisplayEntity(EntityType.TEXT_DISPLAY,world);tag(text,p);
         text.refreshPositionAndAngles(p.x()+.5,p.y()+3,p.z()+.5,0,0);
         NbtCompound t=new NbtCompound();text.writeNbt(t);
-        t.putString("text",Text.Serializer.toJson(Text.literal("§a§l市场交易所§r\n"+p.name()+"\n§f右键 · 挂牌 / 买入 / 撤单")));
+        t.putString("text",Text.Serializer.toJson(Text.literal("§b§l市场交易所§r\n"+p.name()+"\n§f右键 · 挂牌 / 买入 / 撤单")));
         t.putString("billboard","center");t.putString("alignment","center");t.putInt("line_width",220);t.putInt("background",0x99001810);t.putBoolean("shadow",true);t.putByte("text_opacity",(byte)-1);text.readNbt(t);world.spawnEntity(text);
     }
     private static void part(ServerWorld world,MarketOutlet p,Block block,float x,float y,float z,float sx,float sy,float sz) {
