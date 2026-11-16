@@ -105,7 +105,7 @@ public final class MarketCommands {
     /** Explicit currency path, preserving every old /market list command. */
     private static LiteralArgumentBuilder<ServerCommandSource> currencyListing() {
         return CommandManager.literal("offer").requires(MarketCommands::player)
-                .then(CommandManager.argument("currency", StringArgumentType.word())
+                .then(CommandManager.argument("currency", StringArgumentType.string())
                         .suggests((context, builder) -> {
                             dev.jdguo.market.integrate.MarketCurrencies.options().forEach(o -> builder.suggest(o.id()));
                             return builder.buildFuture();

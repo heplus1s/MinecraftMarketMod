@@ -124,7 +124,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         icon(11, Items.REDSTONE, "数量 -1"); icon(13, Items.PAPER, "挂牌数量 " + count); icon(15, Items.GLOWSTONE_DUST, "数量 +1");
         icon(20, Items.REDSTONE, "单价 -1"); icon(21, Items.REDSTONE, "单价 -10"); icon(22, Items.PAPER, "单价 " + price + " · 正整数"); icon(23, Items.GLOWSTONE_DUST, "单价 +10"); icon(24, Items.GLOWSTONE_DUST, "单价 +1");
         icon(29, Items.REDSTONE, "单价 -100"); icon(33, Items.GLOWSTONE_DUST, "单价 +100");
-        icon(31, Items.GOLD_INGOT, "结算货币 " + MarketMessages.currency(currency), "ID: " + currency, "点击切换银行登记的储蓄货币", "个人券作为付款币种尚未开放");
+        icon(31, Items.GOLD_INGOT, "结算货币 " + MarketMessages.currency(currency), "ID: " + currency, "点击切换银行登记的储蓄货币", "个人币按挂牌币种从储蓄扣款");
         icon(40, Items.EMERALD, "确认挂牌", "数量 " + count + "，单价 " + price, "合计 " + BigInteger.valueOf(price).multiply(BigInteger.valueOf(sellKind == 0 ? count : 1)) + " " + MarketMessages.currency(currency), sellKind == 0 ? "托管物品，成交后从买方银行付款给你" : "锁定自己的土地挂牌，成交时过户并由银行付款");
         icon(45, Items.ARROW, "返回挂牌列表"); icon(53, Items.BARRIER, "关闭，不挂牌");
     }

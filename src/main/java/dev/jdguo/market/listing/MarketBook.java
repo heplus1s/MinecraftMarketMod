@@ -103,7 +103,7 @@ public final class MarketBook {
     public List<Listing> search(UUID seller, String sellerName, String itemId, boolean landOnly) {
         List<Listing> found = new ArrayList<>();
         for (Listing listing : listings.values()) {
-            if (listing.status() != ListingStatus.OPEN) {
+            if (listing.initialGrant() || listing.status() != ListingStatus.OPEN) {
                 continue;
             }
             if (seller != null && !listing.seller().equals(seller)) {

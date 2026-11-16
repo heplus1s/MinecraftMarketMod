@@ -6,7 +6,7 @@ import java.math.BigInteger;
 public final class ListingTerms {
     private ListingTerms() {}
     public static boolean validCurrencyId(String id) {
-        return id != null && id.matches("[a-z0-9_]{1,32}");
+        return id != null && (id.matches("[a-z0-9_]{1,32}") || id.matches("personal:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"));
     }
     public static boolean withinMaximum(BigInteger amount, BigInteger maximum) {
         return amount != null && amount.signum() > 0 && (maximum == null ||
