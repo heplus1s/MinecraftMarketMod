@@ -489,7 +489,8 @@ public final class MarketDesk {
             case "land_grant_missing" -> "银行尚未提供土地出让账户，服务器出让土地的货款无法入账。";
             case "insufficient_funds" -> "储蓄余额不足，没有扣款。";
             case "unknown_currency" -> "银行不认识这个币种，没有扣款。";
-            case "bank_failed" -> "银行没有完成这笔划转，没有扣款。";
+            case "bank_failed", "bank_pending" -> "银行结算结果尚未确认，挂牌已锁定，请勿重复付款并请管理员核对。";
+            case "delivery_pending" -> "货款已处理，但交付结果尚未确认，挂牌已锁定等待核对。";
             case "land_missing" -> "领地模组没有加载，无法转让宗地或区块。";
             case "not_owner" -> "你不是这块宗地的所有者。";
             case "listed" -> "这块宗地已经在市场挂牌。请先撤销原来的挂牌。";

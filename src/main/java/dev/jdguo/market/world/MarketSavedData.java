@@ -96,6 +96,7 @@ public final class MarketSavedData extends PersistentState {
             server.getWorld(World.OVERWORLD).getPersistentStateManager().save();
         } catch (RuntimeException exception) {
             dev.jdguo.market.MarketMod.LOGGER.error("Could not flush market data", exception);
+            throw exception;
         }
     }
 

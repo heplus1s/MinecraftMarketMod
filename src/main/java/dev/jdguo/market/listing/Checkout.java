@@ -63,13 +63,19 @@ public final class Checkout {
             handed = handoff.deliver(listing, buyer, buyerName);
         } catch (RuntimeException exception) {
             MarketMod.LOGGER.error("Market delivery failed for {}", listing.id(), exception);
-            handed = Handoff.Outcome.failure("delivery");
+            // A hook can throw after changing ownership. Do not refund an unknown outcome.
+            return Outcome.fail("delivery_pending");
         }
-        if (handed == null || !handed.ok()) {
+        if (handed == null) {
+            return Outcome.fail("delivery_pending");
+        }
+        if (!handed.ok()) {
             return undo(book, listing, buyer, amount, deal, payments, handed, persist);
         }
         NbtCompound pending = handed.pendingItem();
         boolean waiting = pending != null && !pending.isEmpty();
+        // Flush external handoff state while the recovery journal is still PAID.
+        persist.run();
         book.complete(deal.id(), pending);
         persist.run();
         return new Outcome(true, "ok", listing, amount, waiting);
@@ -78,7 +84,7 @@ public final class Checkout {
     public static void recover(MarketBook book, Payments payments, Handoff handoff, Runnable persist) {
         for (Deal deal : book.deals()) {
             SettlementResult refundReceipt = payments.receipt(deal.refundReference());
-            if (refundReceipt.success()) {
+            if (refundReceipt != null && refundReceipt.success()) {
                 book.abort(deal.id());
                 persist.run();
                 continue;
@@ -118,9 +124,13 @@ public final class Checkout {
                 continue;
             }
             if (handed != null && handed.ok()) {
+                persist.run();
                 book.complete(deal.id(), handed.pendingItem());
                 persist.run();
                 continue;
+            }
+            if (handed == null) {
+                continue; // Unknown delivery outcome is not evidence for a refund.
             }
             SettlementResult refund = refundDeal(deal, payments);
             if (!refund.success()) {
@@ -137,8 +147,7 @@ public final class Checkout {
     }
 
     private static boolean receiptUncertain(SettlementResult receipt) {
-        return !receipt.success() && !"unrecorded".equals(receipt.code())
-                && !"receipt_unavailable".equals(receipt.code());
+        return receipt == null || (!receipt.success() && !"unrecorded".equals(receipt.code()));
     }
 
     private static Outcome undo(MarketBook book, Listing listing, UUID buyer, BigInteger amount, Deal deal,

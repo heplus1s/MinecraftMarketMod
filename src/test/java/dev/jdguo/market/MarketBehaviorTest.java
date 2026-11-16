@@ -241,6 +241,62 @@ class MarketBehaviorTest {
     }
 
     @Test
+    void missingReceiptServiceNeverReleasesPossiblyPaidDeal() {
+        for (boolean paid : new boolean[]{false, true}) {
+            MarketBook book = new MarketBook();
+            Listing goods = item(ALICE, 1, 3);
+            book.add(goods);
+            var deal = book.reserve(goods.id(), BOB, "Bob", BigInteger.valueOf(3));
+            if (paid) book.markPaid(deal.id());
+            FakePayments payments = new FakePayments();
+            payments.receiptUnavailable = true;
+            Checkout.recover(book, payments, (listing, buyer, name) -> {
+                throw new AssertionError("unavailable receipt must stop recovery");
+            }, () -> {});
+            assertEquals(1, book.deals().size());
+            assertEquals(ListingStatus.RESERVED, book.get(goods.id()).orElseThrow().status());
+            assertEquals(0, payments.refundSeller);
+        }
+    }
+
+    @Test
+    void handoffExceptionAfterOwnershipChangeDoesNotRefundAndCanRecover() {
+        MarketBook book = new MarketBook();
+        Listing land = Listing.land(UUID.randomUUID(), ListingKind.PARCEL, ALICE, "Alice", Proceeds.SELLER,
+                BigInteger.TEN, "note", UUID.randomUUID(), "Home", OVERWORLD,
+                List.of(new ChunkRef(OVERWORLD, 1, 1)));
+        book.add(land);
+        FakePayments payments = new FakePayments();
+        boolean[] transferred = {false};
+        Checkout.Outcome result = Checkout.buy(book, land.id(), BOB, "Bob", BigInteger.TEN, payments,
+                (listing, buyer, name) -> {
+                    transferred[0] = true;
+                    throw new IllegalStateException("network sync failed after ownership changed");
+                }, () -> {});
+        assertEquals("delivery_pending", result.code());
+        assertTrue(transferred[0]);
+        assertEquals(0, payments.refundSeller);
+        assertEquals(1, book.deals().size());
+        var deal = book.deals().get(0);
+        payments.recorded = java.util.Set.of(deal.reference());
+        Checkout.recover(book, payments, (listing, buyer, name) -> Handoff.Outcome.success(null), () -> {});
+        assertTrue(book.deals().isEmpty());
+        assertEquals(1, payments.sellerPays);
+        assertEquals(0, payments.refundSeller);
+    }
+
+    @Test
+    void successfulHandoffIsFlushedBeforeRecoveryJournalIsRemoved() {
+        MarketBook book = new MarketBook();
+        Listing goods = item(ALICE, 1, 3); book.add(goods);
+        java.util.List<String> events = new java.util.ArrayList<>();
+        Checkout.buy(book, goods.id(), BOB, "Bob", BigInteger.valueOf(3), new FakePayments(),
+                (listing, buyer, name) -> { events.add("handoff"); return Handoff.Outcome.success(null); },
+                () -> events.add(book.deals().isEmpty() ? "complete" : book.deals().get(0).stage().name()));
+        assertEquals(java.util.List.of("RESERVED", "PAID", "handoff", "PAID", "complete"), events);
+    }
+
+    @Test
     void referenceUsesWeightedCompletedStandardItemTradesInTheSameCurrency() {
         MarketBook book = new MarketBook();
         for (int index = 0; index < 3; index++) {
@@ -366,9 +422,11 @@ class MarketBehaviorTest {
 
     private static final class FakePayments implements Payments {
         private java.util.Set<String> recorded = java.util.Set.of();
+        private boolean receiptUnavailable;
 
         @Override
         public SettlementResult receipt(String reference) {
+            if (receiptUnavailable) return SettlementResult.fail("receipt_unavailable", "");
             return recorded.contains(reference) ? SettlementResult.ok() : SettlementResult.fail("unrecorded", "");
         }
 

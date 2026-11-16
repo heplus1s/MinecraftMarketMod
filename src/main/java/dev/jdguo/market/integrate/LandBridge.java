@@ -92,7 +92,9 @@ public final class LandBridge {
             return transferChunks(server, listing, buyer, buyerName, reference);
         } catch (RuntimeException exception) {
             MarketMod.LOGGER.error("Land transfer failed for listing {}", listing.id(), exception);
-            return Handoff.Outcome.failure("delivery");
+            // A transfer may already have changed ownership before a sync failure.
+            // Let checkout retain its PAID journal; recovery rechecks ownership.
+            throw exception;
         }
     }
 
