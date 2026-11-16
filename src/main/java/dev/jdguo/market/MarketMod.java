@@ -33,6 +33,7 @@ public final class MarketMod implements ModInitializer {
         configPath = FabricLoader.getInstance().getConfigDir().resolve("marketmod.json");
         MarketConfig.load(configPath);
         MarketCommands.register();
+        dev.jdguo.market.outlet.MarketOutlets.register();
         MarketSync.register();
         ServerLifecycleEvents.SERVER_STARTING.register(MarketRuntime::attach);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
