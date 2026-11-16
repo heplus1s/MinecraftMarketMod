@@ -14,6 +14,9 @@ public interface Payments {
         return SettlementResult.fail("receipt_unavailable", "");
     }
 
+    /** Release collateral reserved for a successfully delivered system purchase. Idempotent. */
+    default SettlementResult finalizePayment(String reference) { return SettlementResult.ok(); }
+
     SettlementResult paySeller(UUID buyer, UUID seller, String currency, BigInteger amount, String reference);
 
     SettlementResult payLandGrant(UUID buyer, String currency, BigInteger amount, String reference);

@@ -33,6 +33,8 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
     private final ServerPlayerEntity viewer;
     private final SimpleInventory menu;
     private final List<UUID> shown = new ArrayList<>();
+    private UUID landTarget;
+    private List<dev.jdguo.market.listing.ChunkRef> landChunks = List.of();
     private int page;
     private boolean mine;
     private boolean selling;
@@ -53,6 +55,19 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
     public static void open(ServerPlayerEntity player) {
         player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, inv, who) ->
                 new MarketChestScreen(id, inv, player, new SimpleInventory(54)), Text.literal("市场 · 挂牌交易")));
+    }
+
+    public static void openLand(ServerPlayerEntity player, UUID parcel, List<dev.jdguo.market.listing.ChunkRef> chunks, boolean sell, UUID listing) {
+        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, inv, who) -> {
+            MarketChestScreen screen = new MarketChestScreen(id, inv, player, new SimpleInventory(54));
+            screen.landTarget = parcel;
+            screen.landChunks = List.copyOf(chunks);
+            screen.selling = sell;
+            screen.sellKind = 1;
+            screen.selected = listing;
+            screen.renderMenu();
+            return screen;
+        }, Text.literal("土地市场 · 银行结算")));
     }
 
     private MarketDesk desk() { return MarketDesk.get(viewer.getServer()); }
@@ -102,10 +117,14 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         count = Math.max(1, Math.min(count, Math.max(1, available)));
         icon(4, Items.CHEST, hand.isEmpty() ? "请先把物品拿在主手" : hand.getName().getString(), "当前持有 " + available, "只挂牌主手物品，本界面不接受放入物品");
         icon(6, Items.GRASS_BLOCK, "挂牌类型 " + (sellKind == 0 ? "主手物品" : sellKind == 1 ? "脚下整宗土地" : "脚下区块"), "点击切换；土地价格为整单总价");
+        if (landTarget != null) {
+            icon(4, Items.GRASS_BLOCK, "目标宗地 " + landTarget, landChunks.isEmpty() ? "整宗地挂牌" : "选中 " + landChunks.size() + " 个区块");
+            icon(6, Items.GRASS_BLOCK, "地图选区 · 已锁定", "最终确认时再次检查所有权和区块");
+        }
         icon(11, Items.REDSTONE, "数量 -1"); icon(13, Items.PAPER, "挂牌数量 " + count); icon(15, Items.GLOWSTONE_DUST, "数量 +1");
         icon(20, Items.REDSTONE, "单价 -1"); icon(21, Items.REDSTONE, "单价 -10"); icon(22, Items.PAPER, "单价 " + price + " · 正整数"); icon(23, Items.GLOWSTONE_DUST, "单价 +10"); icon(24, Items.GLOWSTONE_DUST, "单价 +1");
         icon(29, Items.REDSTONE, "单价 -100"); icon(33, Items.GLOWSTONE_DUST, "单价 +100");
-        icon(31, Items.GOLD_INGOT, "结算货币 " + MarketMessages.currency(currency), "ID: " + currency, "点击切换银行登记的储蓄货币", "个人券作为付款币种尚未开放");
+        icon(31, Items.GOLD_INGOT, "结算货币 " + MarketMessages.currency(currency), "ID: " + currency, "点击切换银行登记的储蓄货币", "个人币按挂牌币种从储蓄扣款");
         icon(40, Items.EMERALD, "确认挂牌", "数量 " + count + "，单价 " + price, "合计 " + BigInteger.valueOf(price).multiply(BigInteger.valueOf(sellKind == 0 ? count : 1)) + " " + MarketMessages.currency(currency), sellKind == 0 ? "托管物品，成交后从买方银行付款给你" : "锁定自己的土地挂牌，成交时过户并由银行付款");
         icon(45, Items.ARROW, "返回挂牌列表"); icon(53, Items.BARRIER, "关闭，不挂牌");
     }
@@ -115,7 +134,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         if (slot == 53) { viewer.closeHandledScreen(); return; }
         if (selling) {
             switch (slot) {
-                case 6 -> sellKind = (sellKind + 1) % 3;
+                case 6 -> { if (landTarget == null) sellKind = (sellKind + 1) % 3; }
                 case 11 -> count = Math.max(1, count - 1);
                 case 15 -> count = Math.min(9999, count + 1);
                 case 20 -> price = Math.max(1, price - 1);
@@ -129,7 +148,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
                     for (int i = 0; i < options.size(); i++) if (options.get(i).id().equals(currency)) { currency = options.get((i + 1) % options.size()).id(); break; }
                 }
                 case 40 -> {
-                    MarketReply reply = switch (sellKind) {
+                    MarketReply reply = landTarget != null ? desk().listSelectedLand(viewer, landTarget, landChunks, price, currency) : switch (sellKind) {
                         case 1 -> desk().listParcel(viewer, price, false, currency);
                         case 2 -> desk().listChunk(viewer, price, false, currency);
                         default -> desk().listItem(viewer, false, price, count, currency);
@@ -145,7 +164,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
             case 45 -> { page--; selected = null; }
             case 46 -> { page++; selected = null; }
             case 47 -> { mine = !mine; page = 0; selected = null; }
-            case 48 -> { selling = true; count = 1; }
+            case 48 -> { landTarget = null; landChunks = List.of(); sellKind = 0; selling = true; count = 1; }
             case 40, 42 -> {
                 if (selected != null) {
                     MarketReply reply = slot == 40 ? (displayedTotal == null ? MarketReply.message(false, "shop_missing", MarketMessages.line("暂无有效报价，请刷新。")) : desk().buy(viewer, selected.toString(), displayedTotal)) : desk().cancel(viewer, selected.toString(), false);

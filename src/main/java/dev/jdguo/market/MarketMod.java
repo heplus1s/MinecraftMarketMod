@@ -27,25 +27,37 @@ public final class MarketMod implements ModInitializer {
     }
 
     private MinecraftServer awaitingRecovery;
+    private int recoveryTicks;
 
     @Override
     public void onInitialize() {
         configPath = FabricLoader.getInstance().getConfigDir().resolve("marketmod.json");
         MarketConfig.load(configPath);
         MarketCommands.register();
+        dev.jdguo.market.outlet.MarketOutlets.register();
         MarketSync.register();
         ServerLifecycleEvents.SERVER_STARTING.register(MarketRuntime::attach);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             MarketRuntime.attach(server);
             MarketSavedData data = MarketSavedData.get(server);
             awaitingRecovery = server;
+            recoveryTicks = 0;
             LandBridge.install();
             LOGGER.info("Market loaded {} listings", data.book().size());
         });
         ServerTickEvents.START_SERVER_TICK.register(server -> {
-            if (server == awaitingRecovery) {
-                awaitingRecovery = null;
-                MarketSavedData.get(server).recover();
+            boolean startup = server == awaitingRecovery;
+            if (!startup && ++recoveryTicks < 100) return;
+            recoveryTicks = 0;
+            if (startup) awaitingRecovery = null;
+            try {
+                MarketSavedData data = MarketSavedData.get(server);
+                boolean pendingLand = data.book().deals().stream().anyMatch(deal ->
+                        data.book().get(deal.listingId()).map(listing -> listing.kind() != dev.jdguo.market.listing.ListingKind.ITEM).orElse(false));
+                if (startup || pendingLand) data.recover(!startup);
+            } catch (RuntimeException failure) {
+                // A checkpoint failure must never escape into the server tick or erase the paid journal.
+                LOGGER.error("Market recovery deferred; unresolved land deals retry in 100 ticks", failure);
             }
         });
         ServerLifecycleEvents.SERVER_STOPPED.register(MarketRuntime::detach);

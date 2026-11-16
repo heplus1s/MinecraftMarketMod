@@ -51,6 +51,8 @@ public final class MarketSync {
                 if (version == PROTOCOL) {
                     LISTENING.add(player.getUuid());
                     broadcast(server);
+                } else {
+                    LISTENING.remove(player.getUuid());
                 }
             });
         });
@@ -93,6 +95,7 @@ public final class MarketSync {
     }
 
     private static void act(ServerPlayerEntity player, String action) {
+        if (!LISTENING.contains(player.getUuid()) || !ServerPlayNetworking.canSend(player, SYNC)) return;
         String[] parts = action.trim().split("\\s+");
         if (parts.length == 0 || parts[0].isBlank()) {
             return;

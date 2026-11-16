@@ -15,6 +15,9 @@
   "entrypoints": {
     "main": [
       "dev.jdguo.market.MarketMod"
+    ],
+    "client": [
+      "dev.jdguo.market.ui.MarketUiClient"
     ]
   },
   "depends": {
@@ -27,5 +30,8 @@
     "bankmod": "*",
     "landmod": "*",
     "shopmod": "*"
+  },
+  "breaks": {
+    "marketmod-ui": "*"
   }
 }

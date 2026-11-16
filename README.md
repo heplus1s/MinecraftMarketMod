@@ -8,9 +8,9 @@ A Fabric 1.20.1 marketplace for player listings of items and land. Listings can 
 
 Item listings are bought in full. Land can be a whole parcel, or some vanilla 16 by 16 chunks split out of a parcel. Nothing smaller than a chunk is sold. Bank-note trading stays in the bank mod.
 
-提供指令及 `/market ui` 原版箱子交易终端。可选的独立客户端交易界面位于 MinecraftUIMod。不装界面包也可以进服并使用核心交易功能。
+提供指令及 `/market ui` 原版箱子交易终端。可选客户端交易界面已内置于本主模组。不装界面包也可以进服并使用核心交易功能。
 
-Commands and a vanilla chest trading terminal are available. Optional client UI lives in MinecraftUIMod. Vanilla clients can join a dedicated server and use core trading features.
+Commands and a vanilla chest trading terminal are available. Optional client UI is embedded in the core jar. Vanilla clients can join a dedicated server and use core trading features.
 
 许可证为 MIT，版权归 heplus1s。
 
@@ -109,7 +109,7 @@ The bank can record savings, but it does not yet offer a public player-to-player
 
 The reserved chest entry is `dev.jdguo.market.ui.MarketChestUiHooks`. A later menu calls those methods and does not perform settlement itself. The built-in terminal opens a vanilla generic chest screen handler.
 
-独立客户端以后放在 MinecraftUIMod。它先向 `marketmod:hello` 报一个版本号，再通过 `marketmod:action` 发送和指令相同的操作。服务端只在客户端声明过频道之后，才从 `marketmod:sync` 和 `marketmod:result` 回传。原版客户端不声明这些频道，所以不会收到它们，进服不受影响。
+客户端界面已内置在主模组中。它先向 `marketmod:hello` 报一个版本号，再通过 `marketmod:action` 发送和指令相同的操作。服务端只在客户端声明过频道之后，才从 `marketmod:sync` 和 `marketmod:result` 回传。原版客户端不声明这些频道，所以不会收到它们，进服不受影响。
 
 ## 配置和存档
 
@@ -164,3 +164,38 @@ Listings, escrowed items, undelivered items, and unfinished payments are stored 
 ### 验证范围
 
 工作流 `.github/workflows/build.yml` 在推送或 PR 时以 Java 17 运行 `./gradlew build`（含 JUnit）。本次新增测试覆盖挂牌币种保存、按原币扣款/退款、最高总价与非法币种输入。服务器原版客户端的窗口交互、重连、余额不足及银行联调仍需实际启动验证；源码检查或纯逻辑断言不能代替游戏实测。
+
+### 领地入口接入市场
+
+搭配新版领地模组，领地出售/购买/撤销操作会打开原版箱子市场确认页，保留地图宗地/区块选区而不是误用玩家脚下位置。卖方选择正整数总价及支持币种，买方确认整单价格；结算与异常恢复复用 MarketDesk，不新增扣款路径。旧免费挂牌不会自动定价。手动 `/market ui` 仍可使用。需同时更新领地 `dot/land-market` 版本。
+
+## 实体市场柜台（原版客户端兼容）
+
+管理员（权限等级 2）看准柜台下方的方块执行 `/market outlet set <name>`。
+`name` 使用 1–32 位字母、数字、下划线或连字符。重复同名会迁移网点；
+`/market outlet list` 查看所有网点，`/market outlet remove <name>` 删除。
+柜台使用深色木座、石英台面、绿色饰条和悬浮「市场交易所」招牌，
+右键基座或柜台打开现有市场箱子终端，仍需确认价格才会扣款。
+无需客户端资源包、新方块或新付款账户；原有命令保持可用，不强制玩家只能在网点交易。
+
+网点写入世界的 `marketmod_outlets` 状态。加载中的区块每秒检查一次展示实体，
+重启、实体损坏或重复时重建；删除/迁移后未加载区块的旧标志会在重新加载后清理。
+不会强制加载远处区块，也不会替换或删除玩家建筑方块。
+展示实体不是实心方块；柜台需自行配合建筑底座。请勿把不同模组的柜台设在同一位置。
+
+
+## 内置客户端界面
+
+本主模组 JAR 同时包含服务端逻辑与可选客户端界面。服务器安装后，原版客户端无需安装本模组即可使用原有命令/原版菜单。客户端安装同一 JAR 可启用增强界面；界面只在客户端入口加载，服务端保持交易权威。
+
+升级时请移除旧 `marketmod-ui` 独立 JAR；同时安装会由 Fabric Loader 明确拒绝，以避免重复接收器、快捷键和类冲突。不要保留同一主模组的两个版本。只安装本地客户端不会改变远端服务器数据；不支持相关网络通道的服务器不会接收本 UI 操作。
+
+兼容性验收仍需分别执行：专用服务器+原版客户端、Fabric空客户端、完整客户端、单人世界切换远程服务器、旧 UI 包并存的拒绝提示、协议不匹配时的基础入口。构建通过不等同于实际联机验收。
+
+### 土地付款恢复边界
+
+未完成土地订单每 100 个服务器 tick 重试；读取银行收据后才恢复，异常不会中断服务器 tick。
+个人币土地出让在领地确认交付后，调用银行 `completePayment` 持久释放结算锁，失败保留 PAID 订单。
+价格/币种/范围在购买确认前重新核对；已经付款的订单不会按管理员后续修改重新计价。
+本次新增的周期耐久恢复覆盖土地交易；旧版市场物品背包交付没有幂等收据，不在周期重试范围内，
+不能据此宣称物品交易在所有崩溃窗口都不会重复交付。服务器存档应整体备份、整体恢复，不要单独回滚银行、市场或领地文件。

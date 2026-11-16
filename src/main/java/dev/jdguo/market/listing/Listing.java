@@ -102,6 +102,15 @@ public final class Listing {
                 ListingStatus.OPEN, null, new NbtCompound());
     }
 
+    public static Listing initialGrant(UUID id, BigInteger total, String currency, String dimension, List<ChunkRef> chunks) {
+        Listing listing = land(id, ListingKind.CHUNKS, new UUID(0, 0), "服务器土地出让", Proceeds.LAND_GRANT,
+                total, currency, id, "未占用土地首售", dimension, chunks);
+        listing.extra.putBoolean("InitialGrant", true);
+        return listing;
+    }
+
+    public boolean initialGrant() { return extra.getBoolean("InitialGrant"); }
+
     public static Listing read(NbtCompound tag) {
         if (tag == null || !tag.containsUuid("Id") || !tag.containsUuid("Seller")) {
             return null;

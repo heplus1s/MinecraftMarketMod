@@ -45,8 +45,18 @@ public final class MarketSavedData extends PersistentState {
         return book;
     }
 
-    public void recover() {
-        Checkout.recover(book, BankBridge.payments(), this::deliver, this::persistNow);
+    public void recover() { recover(false); }
+
+    public void recover(boolean landOnly) {
+        Checkout.recover(book, BankBridge.payments(), this::deliver, this::persistNow, landOnly);
+        // Initial purchase orders are private checkout journals, not reusable public offers.
+        boolean cleaned = false;
+        for (Listing listing : book.all()) {
+            if (listing.initialGrant() && listing.status() == dev.jdguo.market.listing.ListingStatus.OPEN) {
+                book.remove(listing.id()); cleaned = true;
+            }
+        }
+        if (cleaned) persistNow();
     }
 
     public Handoff.Outcome deliver(Listing listing, UUID buyer, String buyerName) {
@@ -93,7 +103,7 @@ public final class MarketSavedData extends PersistentState {
     public void persistNow() {
         markDirty();
         try {
-            server.getWorld(World.OVERWORLD).getPersistentStateManager().save();
+            DurableMarketState.save(server, ID, this);
         } catch (RuntimeException exception) {
             dev.jdguo.market.MarketMod.LOGGER.error("Could not flush market data", exception);
             throw exception;

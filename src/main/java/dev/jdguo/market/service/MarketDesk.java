@@ -56,7 +56,8 @@ public final class MarketDesk {
     }
 
     public MarketReply listItem(ServerPlayerEntity player, boolean shop, long price, int requested, String currency) {
-        if (!dev.jdguo.market.integrate.MarketCurrencies.accepts(currency)) return fail("unknown_currency");
+        currency = dev.jdguo.market.integrate.MarketCurrencies.resolve(currency);
+        if (currency == null) return fail("unknown_currency");
         ItemStack hand = player.getMainHandStack();
         if (hand.isEmpty()) {
             return fail("empty_hand");
@@ -100,7 +101,8 @@ public final class MarketDesk {
         return listParcel(player, price, serverSale, MarketConfig.get().currency());
     }
     public MarketReply listParcel(ServerPlayerEntity player, long price, boolean serverSale, String currency) {
-        if (!dev.jdguo.market.integrate.MarketCurrencies.accepts(currency)) return fail("unknown_currency");
+        currency = dev.jdguo.market.integrate.MarketCurrencies.resolve(currency);
+        if (currency == null) return fail("unknown_currency");
         if (price <= 0) {
             return fail("price");
         }
@@ -113,6 +115,23 @@ public final class MarketDesk {
             return fail("not_claimed");
         }
         return listLand(player, land, land.chunks(), price, serverSale, true, currency);
+    }
+
+    /** Explicit map selection, revalidated at confirmation rather than using the player's current position. */
+    public MarketReply listSelectedLand(ServerPlayerEntity player, UUID parcelId, List<ChunkRef> selected,
+                                       long price, String currency) {
+        currency = dev.jdguo.market.integrate.MarketCurrencies.resolve(currency);
+        if (currency == null) return fail("unknown_currency");
+        if (price <= 0) return fail("price");
+        MarketReply gate = landReady(player, false);
+        if (gate != null) return gate;
+        LandView land = LandBridge.parcel(server, parcelId);
+        if (land == null) return fail("not_claimed");
+        List<ChunkRef> chunks;
+        try {
+            chunks = dev.jdguo.market.listing.LandSelection.validate(land.chunks(), selected, MarketConfig.get().maxChunksPerListing());
+        } catch (IllegalArgumentException invalid) { return fail("stale"); }
+        return listLand(player, land, chunks, price, false, land.same(chunks), currency);
     }
 
     public MarketReply listChunk(ServerPlayerEntity player, long price, boolean serverSale) {
@@ -128,7 +147,8 @@ public final class MarketDesk {
         return listRectangle(player, price, serverSale, x1, z1, x2, z2, MarketConfig.get().currency());
     }
     public MarketReply listRectangle(ServerPlayerEntity player, long price, boolean serverSale, int x1, int z1, int x2, int z2, String currency) {
-        if (!dev.jdguo.market.integrate.MarketCurrencies.accepts(currency)) return fail("unknown_currency");
+        currency = dev.jdguo.market.integrate.MarketCurrencies.resolve(currency);
+        if (currency == null) return fail("unknown_currency");
         if (price <= 0) {
             return fail("price");
         }

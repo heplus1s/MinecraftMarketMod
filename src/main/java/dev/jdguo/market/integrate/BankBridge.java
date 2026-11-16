@@ -20,6 +20,13 @@ import java.util.UUID;
 public final class BankBridge {
     private static final Payments PAYMENTS = new Payments() {
         @Override
+        public SettlementResult finalizePayment(String reference) {
+            // Custom installed hooks predate clearing locks and retain their no-op contract.
+            if (LandGrantAccount.installed() != null) return SettlementResult.ok();
+            return reflect("completePayment", new Class<?>[]{String.class}, new Object[]{reference}, "finalize_unavailable");
+        }
+
+        @Override
         public SettlementResult receipt(String reference) {
             if (BankSettlement.installed() != null || LandGrantAccount.installed() != null) {
                 return SettlementResult.fail("receipt_unavailable", "");

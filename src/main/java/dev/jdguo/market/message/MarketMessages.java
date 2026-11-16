@@ -22,7 +22,7 @@ public final class MarketMessages {
             case "note" -> "银行券";
             case "diamond" -> "钻石";
             case "copper" -> "铜锭";
-            default -> id == null ? "" : id;
+            default -> id == null ? "" : (id.startsWith("personal:") ? dev.jdguo.market.integrate.MarketCurrencies.options().stream().filter(o -> o.id().equals(id)).map(dev.jdguo.market.integrate.MarketCurrencies.Option::label).findFirst().orElse(id) : id);
         };
     }
 

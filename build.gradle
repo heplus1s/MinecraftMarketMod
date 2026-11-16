@@ -56,3 +56,18 @@ sourceSets.test.runtimeClasspath += sourceSets.main.runtimeClasspath
 test {
     useJUnitPlatform()
 }
+
+loom {
+    splitEnvironmentSourceSets()
+    mods {
+        marketmod {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+}
+
+// Keep the migrated UI unit tests on the client compilation classpath.
+sourceSets.test.compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.client.output + sourceSets.client.runtimeClasspath
+tasks.named("compileTestJava") { dependsOn tasks.named("clientClasses") }

@@ -20,13 +20,38 @@ public final class MarketCurrencies {
                 String label = (String) def.getClass().getMethod("name").invoke(def);
                 if (validId(id)) result.add(new Option(id, label == null ? id : label));
             }
-            return List.copyOf(result);
+            return withPersonal(result);
         } catch (ReflectiveOperationException | LinkageError exception) {
             // Keep standalone listing usable; checkout still refuses without a bank.
             String id = MarketConfig.get().currency();
             return List.of(new Option(id, MarketMessages.currency(id)));
         }
     }
+    private static List<Option> withPersonal(List<Option> base) {
+        List<Option> result = new ArrayList<>(base);
+        try {
+            Class<?> runtime = Class.forName("dev.jdguo.bank.persistence.BankRuntime");
+            Object books = runtime.getMethod("books").invoke(null);
+            Iterable<?> notes = (Iterable<?>) books.getClass().getMethod("personalNotes").invoke(books);
+            for (Object note : notes) {
+                Object id = note.getClass().getMethod("id").invoke(note);
+                String name = String.valueOf(note.getClass().getMethod("name").invoke(note));
+                result.add(new Option("personal:" + id, name));
+            }
+        } catch (ReflectiveOperationException | LinkageError unavailable) { /* absent bank or old API */ }
+        return List.copyOf(result);
+    }
+    public static List<Option> landOptions() { return options(); }
+    public static boolean acceptsLand(String id) { return accepts(id); }
+    /** IDs win; names must uniquely identify a currency, never silently choose a duplicate. */
+    public static String resolve(String raw) {
+        if (raw == null) return null;
+        List<Option> options = options();
+        for (Option option : options) if (option.id().equals(raw)) return option.id();
+        List<Option> named = options.stream().filter(o -> o.label().equals(raw)).toList();
+        return named.size() == 1 ? named.get(0).id() : null;
+    }
+
     public static boolean validId(String id) {
         return dev.jdguo.market.listing.ListingTerms.validCurrencyId(id);
     }

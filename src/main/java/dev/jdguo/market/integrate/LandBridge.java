@@ -85,6 +85,13 @@ public final class LandBridge {
             return Handoff.Outcome.failure("land_missing");
         }
         String reference = SaleReference.of(listing.id());
+        if (listing.initialGrant()) {
+            String result = initialGrant(server, buyer, listing.dimension(), coordinates(listing.chunks()), reference);
+            if ("applied".equals(result)) return Handoff.Outcome.success(null);
+            if (result.startsWith("rejected:")) return Handoff.Outcome.drop("stale");
+            // pending/conflict/missing API are ambiguous: retain the PAID journal, never refund blindly.
+            throw new IllegalStateException("Initial land grant outcome: " + result);
+        }
         try {
             if (listing.kind() == ListingKind.PARCEL) {
                 return transferParcel(server, listing, buyer, buyerName, reference);
@@ -141,6 +148,22 @@ public final class LandBridge {
                 new Class<?>[]{MinecraftServer.class, UUID.class, List.class, UUID.class, String.class, String.class},
                 server, listing.seller(), keys, buyer, buyerName, reference));
         return map(result);
+    }
+
+    public static String initialGrantCheck(MinecraftServer server, UUID buyer, String dimension, int[] coordinates) {
+        Object result = call("initialGrantCheck", new Class<?>[]{MinecraftServer.class, UUID.class, String.class, int[].class}, server, buyer, dimension, coordinates);
+        return result == null ? "rejected:领地接口不可用" : String.valueOf(result);
+    }
+
+    private static String initialGrant(MinecraftServer server, UUID buyer, String dimension, int[] coordinates, String reference) {
+        Object result = call("initialGrant", new Class<?>[]{MinecraftServer.class, UUID.class, String.class, int[].class, String.class}, server, buyer, dimension, coordinates, reference);
+        return result == null ? "pending" : String.valueOf(result);
+    }
+
+    public static int[] coordinates(List<ChunkRef> chunks) {
+        int[] result = new int[chunks.size() * 2];
+        for (int i = 0; i < chunks.size(); i++) { result[i * 2] = chunks.get(i).x(); result[i * 2 + 1] = chunks.get(i).z(); }
+        return result;
     }
 
     private static Object call(String name, Class<?>[] types, Object... args) {
