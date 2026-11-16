@@ -164,3 +164,7 @@ Listings, escrowed items, undelivered items, and unfinished payments are stored 
 ### 验证范围
 
 工作流 `.github/workflows/build.yml` 在推送或 PR 时以 Java 17 运行 `./gradlew build`（含 JUnit）。本次新增测试覆盖挂牌币种保存、按原币扣款/退款、最高总价与非法币种输入。服务器原版客户端的窗口交互、重连、余额不足及银行联调仍需实际启动验证；源码检查或纯逻辑断言不能代替游戏实测。
+
+### 领地入口接入市场
+
+搭配新版领地模组，领地出售/购买/撤销操作会打开原版箱子市场确认页，保留地图宗地/区块选区而不是误用玩家脚下位置。卖方选择正整数总价及支持币种，买方确认整单价格；结算与异常恢复复用 MarketDesk，不新增扣款路径。旧免费挂牌不会自动定价。手动 `/market ui` 仍可使用。需同时更新领地 `dot/land-market` 版本。

@@ -115,6 +115,22 @@ public final class MarketDesk {
         return listLand(player, land, land.chunks(), price, serverSale, true, currency);
     }
 
+    /** Explicit map selection, revalidated at confirmation rather than using the player's current position. */
+    public MarketReply listSelectedLand(ServerPlayerEntity player, UUID parcelId, List<ChunkRef> selected,
+                                       long price, String currency) {
+        if (!dev.jdguo.market.integrate.MarketCurrencies.accepts(currency)) return fail("unknown_currency");
+        if (price <= 0) return fail("price");
+        MarketReply gate = landReady(player, false);
+        if (gate != null) return gate;
+        LandView land = LandBridge.parcel(server, parcelId);
+        if (land == null) return fail("not_claimed");
+        List<ChunkRef> chunks;
+        try {
+            chunks = dev.jdguo.market.listing.LandSelection.validate(land.chunks(), selected, MarketConfig.get().maxChunksPerListing());
+        } catch (IllegalArgumentException invalid) { return fail("stale"); }
+        return listLand(player, land, chunks, price, false, land.same(chunks), currency);
+    }
+
     public MarketReply listChunk(ServerPlayerEntity player, long price, boolean serverSale) {
         return listChunk(player, price, serverSale, MarketConfig.get().currency());
     }
