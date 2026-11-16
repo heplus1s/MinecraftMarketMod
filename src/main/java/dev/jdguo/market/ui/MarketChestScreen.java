@@ -1,0 +1,162 @@
+package dev.jdguo.market.ui;
+
+import dev.jdguo.market.config.MarketConfig;
+import dev.jdguo.market.integrate.MarketCurrencies;
+import dev.jdguo.market.integrate.ShopPrices;
+import dev.jdguo.market.listing.Listing;
+import dev.jdguo.market.listing.ListingKind;
+import dev.jdguo.market.listing.PriceMode;
+import dev.jdguo.market.message.MarketMessages;
+import dev.jdguo.market.service.MarketDesk;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.inventory.SimpleInventory;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtString;
+import net.minecraft.screen.GenericContainerScreenHandler;
+import net.minecraft.screen.ScreenHandlerType;
+import net.minecraft.screen.SimpleNamedScreenHandlerFactory;
+import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
+
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+/** Vanilla generic chest packets only: no custom client screen or client mod required. */
+public final class MarketChestScreen extends GenericContainerScreenHandler {
+    private final ServerPlayerEntity viewer;
+    private final SimpleInventory menu;
+    private final List<UUID> shown = new ArrayList<>();
+    private int page;
+    private boolean mine;
+    private boolean selling;
+    private UUID selected;
+    private BigInteger displayedTotal;
+    private int sellKind; // 0 held item, 1 parcel, 2 current chunk
+    private long price = 1;
+    private int count = 1;
+    private String currency = MarketConfig.get().currency();
+
+    private MarketChestScreen(int id, PlayerInventory inventory, ServerPlayerEntity viewer, SimpleInventory menu) {
+        super(ScreenHandlerType.GENERIC_9X6, id, inventory, menu, 6);
+        this.viewer = viewer;
+        this.menu = menu;
+        renderMenu();
+    }
+
+    public static void open(ServerPlayerEntity player) {
+        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, inv, who) ->
+                new MarketChestScreen(id, inv, player, new SimpleInventory(54)), Text.literal("市场 · 挂牌交易")));
+    }
+
+    private MarketDesk desk() { return MarketDesk.get(viewer.getServer()); }
+    private void icon(int slot, Item item, String name, String... lore) {
+        ItemStack stack = new ItemStack(item);
+        stack.setCustomName(Text.literal(name));
+        NbtList lines = new NbtList();
+        for (String line : lore) lines.add(NbtString.of(Text.Serializer.toJson(Text.literal(line))));
+        stack.getOrCreateSubNbt("display").put("Lore", lines);
+        menu.setStack(slot, stack);
+    }
+    private void renderMenu() {
+        menu.clear(); shown.clear();
+        if (selling) { renderSell(); sendContentUpdates(); return; }
+        List<Listing> listings = desk().book().search(mine ? viewer.getUuid() : null, null, null, false);
+        int pages = Math.max(1, (listings.size() + 35) / 36);
+        page = Math.max(0, Math.min(page, pages - 1));
+        for (int i = page * 36; i < Math.min(listings.size(), (page + 1) * 36); i++) {
+            Listing listing = listings.get(i); shown.add(listing.id());
+            ListingView view = desk().view(listing, listing.priceMode() == PriceMode.SHOP
+                    ? ShopPrices.quote(listing.itemId(), listing.currency()) : null);
+            String title = listing.kind() == ListingKind.ITEM ? listing.itemId() + " × " + listing.count() : listing.parcelName();
+            icon(i - page * 36, listing.kind() == ListingKind.ITEM ? Items.CHEST : Items.GRASS_BLOCK,
+                    title, "编号 " + listing.shortId(), "卖方 " + listing.sellerName(),
+                    "整单 " + (view.totalPrice().isBlank() ? "暂无报价" : view.totalPrice()) + " " + MarketMessages.currency(view.currency()),
+                    listing.priceMode() == PriceMode.SHOP ? "浮动报价，成交时重新读取" : "固定价格", "点击查看并确认，尚不扣款");
+        }
+        Listing current = selected == null ? null : desk().book().get(selected).orElse(null);
+        if (current != null) {
+            ListingView view = desk().view(current, current.priceMode() == PriceMode.SHOP ? ShopPrices.quote(current.itemId(), current.currency()) : null);
+            displayedTotal = view.totalPrice().isBlank() ? null : new BigInteger(view.totalPrice());
+            icon(38, Items.PAPER, "已选 " + current.shortId(), "卖方 " + current.sellerName(), "整单 " + view.totalPrice() + " " + MarketMessages.currency(current.currency()), "买下全部 " + current.count() + " 件/区块");
+            if (current.seller().equals(viewer.getUuid())) icon(42, Items.BARRIER, "确认撤销自己的挂牌", "托管物品退回背包或待领取记录");
+            else icon(40, Items.EMERALD, "确认购买整单", "从银行扣除指定货币，不自动换汇", "币种 " + MarketMessages.currency(current.currency()), current.priceMode() == PriceMode.SHOP ? "浮动报价将在点击时重新读取" : "整单 " + view.totalPrice());
+        } else icon(38, Items.PAPER, "选择挂牌查看详情", "没有买单簿：本页为卖方挂牌，不是虚构的买卖深度");
+        icon(45, Items.ARROW, "上一页"); icon(46, Items.ARROW, "下一页");
+        icon(47, Items.PLAYER_HEAD, mine ? "我的挂牌 · 点击查看全部" : "全部挂牌 · 点击查看我的");
+        icon(48, Items.CHEST, "挂牌手中物品", "打开数量、价格和结算币种选择");
+        icon(49, Items.CLOCK, "刷新 · 第 " + (page + 1) + "/" + pages + " 页", "共 " + listings.size() + " 笔挂牌");
+        icon(53, Items.BARRIER, "关闭"); sendContentUpdates();
+    }
+    private void renderSell() {
+        List<MarketCurrencies.Option> options = MarketCurrencies.options();
+        if (!options.isEmpty() && options.stream().noneMatch(o -> o.id().equals(currency))) currency = options.get(0).id();
+        ItemStack hand = viewer.getMainHandStack();
+        int available = hand.getCount();
+        count = Math.max(1, Math.min(count, Math.max(1, available)));
+        icon(4, Items.CHEST, hand.isEmpty() ? "请先把物品拿在主手" : hand.getName().getString(), "当前持有 " + available, "只挂牌主手物品，本界面不接受放入物品");
+        icon(6, Items.GRASS_BLOCK, "挂牌类型 " + (sellKind == 0 ? "主手物品" : sellKind == 1 ? "脚下整宗土地" : "脚下区块"), "点击切换；土地价格为整单总价");
+        icon(11, Items.REDSTONE, "数量 -1"); icon(13, Items.PAPER, "挂牌数量 " + count); icon(15, Items.GLOWSTONE_DUST, "数量 +1");
+        icon(20, Items.REDSTONE, "单价 -1"); icon(21, Items.REDSTONE, "单价 -10"); icon(22, Items.PAPER, "单价 " + price + " · 正整数"); icon(23, Items.GLOWSTONE_DUST, "单价 +10"); icon(24, Items.GLOWSTONE_DUST, "单价 +1");
+        icon(29, Items.REDSTONE, "单价 -100"); icon(33, Items.GLOWSTONE_DUST, "单价 +100");
+        icon(31, Items.GOLD_INGOT, "结算货币 " + MarketMessages.currency(currency), "ID: " + currency, "点击切换银行登记的储蓄货币", "个人券作为付款币种尚未开放");
+        icon(40, Items.EMERALD, "确认挂牌", "数量 " + count + "，单价 " + price, "合计 " + BigInteger.valueOf(price).multiply(BigInteger.valueOf(sellKind == 0 ? count : 1)) + " " + MarketMessages.currency(currency), sellKind == 0 ? "托管物品，成交后从买方银行付款给你" : "锁定自己的土地挂牌，成交时过户并由银行付款");
+        icon(45, Items.ARROW, "返回挂牌列表"); icon(53, Items.BARRIER, "关闭，不挂牌");
+    }
+    @Override public void onSlotClick(int slot, int button, SlotActionType action, PlayerEntity player) {
+        // Never call super: icons, hotbar swaps, drag, clone and quick-move must not move real items.
+        if (player != viewer || action != SlotActionType.PICKUP || button != 0 || slot < 0 || slot >= 54) return;
+        if (slot == 53) { viewer.closeHandledScreen(); return; }
+        if (selling) {
+            switch (slot) {
+                case 6 -> sellKind = (sellKind + 1) % 3;
+                case 11 -> count = Math.max(1, count - 1);
+                case 15 -> count = Math.min(9999, count + 1);
+                case 20 -> price = Math.max(1, price - 1);
+                case 21 -> price = Math.max(1, price - 10);
+                case 29 -> price = Math.max(1, price - 100);
+                case 24 -> price = price == Long.MAX_VALUE ? price : price + 1;
+                case 23 -> price = price > Long.MAX_VALUE - 10 ? Long.MAX_VALUE : price + 10;
+                case 33 -> price = price > Long.MAX_VALUE - 100 ? Long.MAX_VALUE : price + 100;
+                case 31 -> {
+                    var options = MarketCurrencies.options();
+                    for (int i = 0; i < options.size(); i++) if (options.get(i).id().equals(currency)) { currency = options.get((i + 1) % options.size()).id(); break; }
+                }
+                case 40 -> {
+                    MarketReply reply = switch (sellKind) {
+                        case 1 -> desk().listParcel(viewer, price, false, currency);
+                        case 2 -> desk().listChunk(viewer, price, false, currency);
+                        default -> desk().listItem(viewer, false, price, count, currency);
+                    };
+                    reply.lines().forEach(line -> viewer.sendMessage(line, false));
+                    if (reply.ok()) selling = false;
+                }
+                case 45 -> selling = false;
+                default -> { }
+            }
+        } else if (slot < shown.size()) selected = shown.get(slot);
+        else switch (slot) {
+            case 45 -> { page--; selected = null; }
+            case 46 -> { page++; selected = null; }
+            case 47 -> { mine = !mine; page = 0; selected = null; }
+            case 48 -> { selling = true; count = 1; }
+            case 40, 42 -> {
+                if (selected != null) {
+                    MarketReply reply = slot == 40 ? (displayedTotal == null ? MarketReply.message(false, "shop_missing", MarketMessages.line("暂无有效报价，请刷新。")) : desk().buy(viewer, selected.toString(), displayedTotal)) : desk().cancel(viewer, selected.toString(), false);
+                    reply.lines().forEach(line -> viewer.sendMessage(line, false));
+                    selected = null;
+                }
+            }
+            default -> { }
+        }
+        renderMenu();
+    }
+    @Override public ItemStack quickMove(PlayerEntity player, int slot) { return ItemStack.EMPTY; }
+    @Override public boolean canUse(PlayerEntity player) { return player == viewer && viewer.isAlive(); }
+}
