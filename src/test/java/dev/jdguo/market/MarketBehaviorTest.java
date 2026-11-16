@@ -215,7 +215,7 @@ class MarketBehaviorTest {
     }
 
     @Test
-    void startupRecoversDebitsAndRecognizesAlreadyPostedRefunds() {
+    void startupLocksUnreceiptedItemDebitsAndRecognizesAlreadyPostedRefunds() {
         MarketBook book = new MarketBook();
         Listing goods = item(ALICE, 1, 3);
         book.add(goods);
@@ -224,8 +224,9 @@ class MarketBehaviorTest {
         payments.recorded = java.util.Set.of(deal.reference());
         MarketBook reloaded = MarketBook.read(book.write());
         Checkout.recover(reloaded, payments, (listing, buyer, name) -> Handoff.Outcome.success(null), () -> {});
-        assertTrue(reloaded.deals().isEmpty());
-        assertTrue(reloaded.get(goods.id()).isEmpty());
+        assertEquals(1, reloaded.deals().size());
+        assertEquals(dev.jdguo.market.listing.Deal.Stage.PAID, reloaded.deals().get(0).stage());
+        assertEquals(ListingStatus.RESERVED, reloaded.get(goods.id()).orElseThrow().status());
         assertEquals(0, payments.sellerPays);
 
         book.markPaid(deal.id());

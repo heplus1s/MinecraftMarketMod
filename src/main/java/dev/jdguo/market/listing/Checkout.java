@@ -124,6 +124,12 @@ public final class Checkout {
                 }
                 continue;
             }
+            // There is no durable exactly-once receipt for legacy inventory insertion. A PAID
+            // item deal can already have delivered; never replay it or refund it automatically.
+            if (listing.kind() == ListingKind.ITEM) {
+                MarketMod.LOGGER.error("Paid item deal {} requires inventory reconciliation; not replaying", deal.id());
+                continue;
+            }
             Handoff.Outcome handed;
             try {
                 handed = handoff.deliver(listing, deal.buyer(), deal.buyerName());

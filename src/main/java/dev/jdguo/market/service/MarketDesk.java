@@ -74,16 +74,28 @@ public final class MarketDesk {
         }
         String itemId = net.minecraft.registry.Registries.ITEM.getId(hand.getItem()).toString();
         BigInteger quote = shop ? ShopPrices.quote(itemId, currency) : null;
-        ItemStack listed = hand.split(count);
+        ItemStack listed = hand.copy();
+        listed.setCount(count);
         Listing listing = Listing.item(UUID.randomUUID(), player.getUuid(), player.getGameProfile().getName(),
                 Proceeds.SELLER, shop ? PriceMode.SHOP : PriceMode.CUSTOM,
                 shop ? BigInteger.ZERO : BigInteger.valueOf(price), currency, count, itemId,
                 listed.writeNbt(new NbtCompound()));
         if (!book().add(listing)) {
-            player.getInventory().insertStack(listed);
             return fail("limit");
         }
+        // Persist a non-purchasable escrow intent BEFORE touching the player's inventory.
+        // Interrupted intents remain RESERVED; neither restart nor cancel may duplicate them.
+        book().lockItem(listing.id());
         data.persistNow();
+        hand.decrement(count);
+        try {
+            dev.jdguo.market.world.DurablePlayerInventory.save(player);
+            book().unlockItem(listing.id());
+            data.persistNow();
+        } catch (RuntimeException uncertain) {
+            if (listing.status() == dev.jdguo.market.listing.ListingStatus.OPEN) book().lockItem(listing.id());
+            return fail("inventory_pending");
+        }
         MarketSync.broadcast(server);
         Text name = listed.getName().copy();
         String priceText = shop
@@ -253,20 +265,16 @@ public final class MarketDesk {
             if (stack.isEmpty()) {
                 return fail("bad_item");
             }
-            book().remove(listing.id());
-            ServerPlayerEntity seller = server.getPlayerManager().getPlayer(listing.seller());
-            boolean pending = false;
-            if (seller == null) {
-                book().addPending(listing.seller(), stack.writeNbt(new NbtCompound()));
-                pending = true;
-            } else {
-                seller.getInventory().insertStack(stack);
-                if (!stack.isEmpty()) {
-                    book().addPending(listing.seller(), stack.writeNbt(new NbtCompound()));
-                    pending = true;
-                }
-            }
+            // Cancellation is a single market-file move into the mailbox. Inventory delivery
+            // happens through its separately journaled path, never before this checkpoint.
+            book().lockItem(listing.id());
             data.persistNow();
+            book().remove(listing.id());
+            book().addPending(listing.seller(), stack.writeNbt(new NbtCompound()));
+            data.persistNow();
+            ServerPlayerEntity seller = server.getPlayerManager().getPlayer(listing.seller());
+            if (seller != null) data.deliverPending(seller);
+            boolean pending = !book().pendingOf(listing.seller()).isEmpty();
             MarketSync.broadcast(server);
             String body = pending
                     ? "已撤销挂牌 " + listing.shortId() + "。背包空间不足，物品会在卖方下次进入世界时退回。"
@@ -503,6 +511,7 @@ public final class MarketDesk {
             case "self" -> "不能购买自己的挂牌。";
             case "price_moved" -> "当前总价超过确认时的最高总价，未扣款。请刷新报价后重新确认。";
             case "price" -> "价格必须是正整数。";
+            case "inventory_pending" -> "物品存档结果尚未确认，已锁定挂牌等待管理员核对。请勿重复挂牌或退款。";
             case "reserved" -> "这块挂牌正在结算，请稍后再试。";
             case "bank_missing" -> "银行模组没有加载，货款无法结算。";
             case "bank_hook_missing" -> "银行尚未提供玩家之间的储蓄划转，货款无法交给卖方。";

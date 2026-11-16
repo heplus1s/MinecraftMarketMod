@@ -40,6 +40,25 @@ public final class MarketCommands {
         dispatcher.register(CommandManager.literal(MarketCommandNames.ROOT)
                 .executes(MarketCommands::usage)
                 .then(personalNoteCommands())
+                .then(CommandManager.literal("audit").requires(source -> source.hasPermissionLevel(2)).executes(context -> {
+                    var book = MarketDesk.get(context.getSource().getServer()).book();
+                    int count = 0;
+                    for (var listing : book.all()) {
+                        if (listing.status() != dev.jdguo.market.listing.ListingStatus.RESERVED) continue;
+                        var deal = book.deals().stream().filter(d -> d.listingId().equals(listing.id())).findFirst();
+                        String message = "[市场核对] 挂牌=" + listing.id() + " 类型=" + listing.kind()
+                                + " 卖方=" + listing.seller() + " 数量=" + listing.count()
+                                + (deal.isPresent() ? " 交易=" + deal.get().id() + " 阶段=" + deal.get().stage()
+                                + " 买方=" + deal.get().buyer() + " 银行引用=" + deal.get().reference()
+                                : " 库存托管/撤销意图，尚无交易，必须核对背包后处理");
+                        context.getSource().sendFeedback(() -> Text.literal(message), false); count++;
+                    }
+                    for (String owner : book.pendingDeliveryLockOwners()) {
+                        context.getSource().sendFeedback(() -> Text.literal("[市场核对] 待领物品交付锁 玩家=" + owner + "；不要直接清锁或重复补发"), false); count++;
+                    }
+                    if (count == 0) context.getSource().sendFeedback(() -> Text.literal("[市场核对] 没有锁定交易或物品交付"), false);
+                    return 1;
+                }))
                 .then(CommandManager.literal("ui").requires(MarketCommands::player).executes(context -> {
                     dev.jdguo.market.ui.MarketChestScreen.open(player(context)); return 1;
                 }))

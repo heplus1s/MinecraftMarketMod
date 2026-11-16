@@ -27,7 +27,7 @@ public final class MarketBook {
     public static final int VERSION = 1;
     public static final int TRADE_LIMIT = 2000;
 
-    private static final Set<String> ROOT_KEYS = Set.of("version", "listings", "trades", "pending", "deals");
+    private static final Set<String> ROOT_KEYS = Set.of("version", "listings", "trades", "pending", "deals", "pendingDeliveryLocks");
 
     private final Map<UUID, Listing> listings = new LinkedHashMap<>();
     private final Map<UUID, Deal> deals = new LinkedHashMap<>();
@@ -37,6 +37,7 @@ public final class MarketBook {
     private final List<NbtCompound> preservedListings = new ArrayList<>();
     private final List<NbtCompound> preservedDeals = new ArrayList<>();
     private NbtCompound extra = new NbtCompound();
+    private NbtCompound pendingDeliveryLocks = new NbtCompound();
 
     public int size() {
         return listings.size();
@@ -210,9 +211,31 @@ public final class MarketBook {
         pending.addAll(remaining);
     }
 
+    /** Reserved without a deal: inventory escrow operation must be checked manually after interruption. */
+    public void lockItem(UUID id) {
+        Listing listing = listings.get(id);
+        if (listing == null || listing.kind() != ListingKind.ITEM || listing.status() != ListingStatus.OPEN)
+            throw new IllegalStateException("item not open");
+        listing.reserve(listing.seller());
+    }
+    public void unlockItem(UUID id) {
+        Listing listing = listings.get(id);
+        if (listing == null || listing.kind() != ListingKind.ITEM || deals.values().stream().anyMatch(d -> d.listingId().equals(id)))
+            throw new IllegalStateException("not an inventory escrow");
+        listing.release();
+    }
+    public List<String> pendingDeliveryLockOwners() { return pendingDeliveryLocks.getKeys().stream().sorted().toList(); }
+    public boolean pendingDeliveryLocked(UUID player) { return pendingDeliveryLocks.contains(player.toString()); }
+    public void lockPendingDelivery(UUID player) {
+        if (pendingDeliveryLocked(player)) throw new IllegalStateException("pending delivery requires reconciliation");
+        pendingDeliveryLocks.putBoolean(player.toString(), true);
+    }
+    public void unlockPendingDelivery(UUID player) { pendingDeliveryLocks.remove(player.toString()); }
+
     public NbtCompound write() {
         NbtCompound nbt = extra.copy();
         nbt.putInt("version", VERSION);
+        nbt.put("pendingDeliveryLocks", pendingDeliveryLocks.copy());
         NbtList listingList = new NbtList();
         List<Listing> ordered = new ArrayList<>(listings.values());
         ordered.sort(Comparator.comparing(listing -> listing.id().toString()));
@@ -246,6 +269,7 @@ public final class MarketBook {
             return book;
         }
         book.extra = unknown(nbt, ROOT_KEYS);
+        book.pendingDeliveryLocks = nbt.getCompound("pendingDeliveryLocks").copy();
         NbtList listingList = nbt.getList("listings", NbtElement.COMPOUND_TYPE);
         for (int i = 0; i < listingList.size(); i++) {
             NbtCompound tag = listingList.getCompound(i);
