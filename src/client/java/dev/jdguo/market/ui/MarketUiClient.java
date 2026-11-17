@@ -26,51 +26,61 @@ public final class MarketUiClient implements ClientModInitializer {
     private static boolean personalRequested;
     @Override public void onInitializeClient() {
         ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "open"), (client, handler, buf, response) -> {
-            String json = buf.readString(262144);
+            String json;
+            try { json = buf.readString(262144); } catch (RuntimeException malformed) { return; }
             client.execute(() -> {
-                try { latest = JsonParser.parseString(json).getAsJsonObject(); awaitingOpen = 0; open(client); }
-                catch (RuntimeException ignored) { }
+                if (client.getNetworkHandler() != handler || client.player == null) return;
+                try { latest = JsonParser.parseString(json).getAsJsonObject(); open(client); awaitingOpen = 0; }
+                catch (RuntimeException invalid) { invalidPacket(client, invalid); }
             });
         });
         ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "catalog"), (client, handler, buf, response) -> {
-            String json = buf.readString(262144);
+            String json;
+            try { json = buf.readString(262144); } catch (RuntimeException malformed) { return; }
             client.execute(() -> {
+                if (client.getNetworkHandler() != handler || client.player == null) return;
                 try {
                     var snapshot = catalogPages.accept(JsonParser.parseString(json).getAsJsonObject());
                     if (snapshot != null) {
                         latestCatalog = snapshot;
                         if (client.currentScreen instanceof MarketScreen screen) screen.catalog(snapshot.currency(), snapshot.items());
                     }
-                } catch (RuntimeException ignored) { }
+                } catch (RuntimeException invalid) { invalidPacket(client, invalid); }
             });
         });
         ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "personal"), (client, handler, buf, response) -> {
-            String json=buf.readString(262144);
-            client.execute(()->{try{if(client.currentScreen instanceof PersonalMarketScreen screen)screen.accept(JsonParser.parseString(json).getAsJsonObject());}catch(RuntimeException ignored){}});
+            String json;
+            try { json = buf.readString(262144); } catch (RuntimeException malformed) { return; }
+            client.execute(()->{if(client.getNetworkHandler()!=handler||client.player==null)return;try{if(client.currentScreen instanceof PersonalMarketScreen screen)screen.accept(JsonParser.parseString(json).getAsJsonObject());}catch(RuntimeException invalid){invalidPacket(client,invalid);}});
         });
         ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "system_shop"), (client, handler, buf, response) -> {
-            String json=buf.readString(32767);
-            client.execute(()->{try{if(client.currentScreen instanceof SystemShopScreen screen)screen.accept(JsonParser.parseString(json).getAsJsonObject());}catch(RuntimeException ignored){}});
+            String json;
+            try { json = buf.readString(32767); } catch (RuntimeException malformed) { return; }
+            client.execute(()->{if(client.getNetworkHandler()!=handler||client.player==null)return;try{if(client.currentScreen instanceof SystemShopScreen screen)screen.accept(JsonParser.parseString(json).getAsJsonObject());}catch(RuntimeException invalid){invalidPacket(client,invalid);}});
         });
         LandConfirmScreen.register();
         ClientPlayNetworking.registerGlobalReceiver(SYNC, (client, handler, buf, response) -> {
-            String json = buf.readString(262144);
+            String json;
+            try { json = buf.readString(262144); } catch (RuntimeException malformed) { return; }
             client.execute(() -> {
+                if (client.getNetworkHandler() != handler || client.player == null) return;
                 try {
                     latest = JsonParser.parseString(json).getAsJsonObject();
                     if (client.currentScreen instanceof MarketScreen screen) screen.update(latest);
                     else if (awaitingOpen > 0) open(client);
                     awaitingOpen = 0;
-                } catch (RuntimeException ignored) { }
+                } catch (RuntimeException invalid) { invalidPacket(client, invalid); }
             });
         });
         ClientPlayNetworking.registerGlobalReceiver(RESULT, (client, handler, buf, response) -> {
-            String json = buf.readString(262144);
+            String json;
+            try { json = buf.readString(262144); } catch (RuntimeException malformed) { return; }
             client.execute(() -> {
+                if (client.getNetworkHandler() != handler || client.player == null) return;
                 try {
                     JsonObject result = JsonParser.parseString(json).getAsJsonObject();
                     if (client.currentScreen instanceof MarketScreen screen) screen.result(result);
-                } catch (RuntimeException ignored) { }
+                } catch (RuntimeException invalid) { invalidPacket(client, invalid); }
             });
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
@@ -118,10 +128,17 @@ public final class MarketUiClient implements ClientModInitializer {
         catalog(currency.isBlank() ? "note" : currency);
     }
     static boolean catalog(String currency) { return action("catalog " + currency); }
+    private static void invalidPacket(MinecraftClient client, RuntimeException invalid) {
+        org.slf4j.LoggerFactory.getLogger("marketmod-ui").warn("Cannot display server market packet", invalid);
+        if (awaitingOpen > 0) {
+            awaitingOpen = 0;
+            inform(client, "市场界面数据无法显示，请检查日志及两端模组版本。");
+        }
+    }
     private static void inform(MinecraftClient client, String message) {
         if (client.player != null) client.player.sendMessage(Text.literal(message), false);
     }
-    static boolean available() { return ClientPlayNetworking.canSend(HELLO) && ClientPlayNetworking.canSend(ACTION); }
+    static boolean available() { return MinecraftClient.getInstance().getNetworkHandler() != null && ClientPlayNetworking.canSend(HELLO) && ClientPlayNetworking.canSend(ACTION); }
     static boolean refresh() {
         if (!available()) return false;
         var buf = PacketByteBufs.create(); buf.writeVarInt(1); ClientPlayNetworking.send(HELLO, buf); return true;

@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class MarketOutletTest {
  @Test void identifierCannotInjectTagsOrFormatting() {
   assertTrue(MarketOutlet.validName("central-market_1"));
-  for(String n:new String[]{"", "bad name", "§a", "a:b", "a".repeat(33)}) assertFalse(MarketOutlet.validName(n));
+  for(String n:new String[]{"", "trailing ", "§a", "a:b", "a".repeat(33)}) assertFalse(MarketOutlet.validName(n));
   assertFalse(MarketOutlet.validName(null));
  }
  @Test void anchorsAndReachAreDimensionScoped() {
