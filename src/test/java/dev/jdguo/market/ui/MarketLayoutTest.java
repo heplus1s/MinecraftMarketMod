@@ -22,5 +22,14 @@ class MarketLayoutTest {
    assertTrue(91+9<107,"labels clear of submit");
   }
  }
+ @Test void personalCurrencyControlsFitWithoutOverlap(){
+  for(int[] size:new int[][]{{480,300},{640,360},{800,440},{854,480},{1280,720},{1920,1080}}){var l=MarketLayout.at(size[0],size[1]);var list=l.listings();var order=l.order();
+   int rows=Math.max(1,(list.height()-105)/24);
+   assertTrue(72+(rows-1)*24+18<=list.height()-24);
+   assertTrue(71+9<=l.details().height());assertTrue(71+9<=l.book().height());
+   assertTrue(24+18<57);assertTrue(57+18<82);assertTrue(82+18<110);assertTrue(110+9<order.height());
+   assertTrue(order.width()-70>=80);
+  }
+ }
  @Test void tooSmallViewportsRequestLowerGuiScaleInsteadOfHidingSections(){assertFalse(MarketLayout.supported(427,240));assertFalse(MarketLayout.supported(640,240));assertTrue(MarketLayout.supported(640,360));}
 }

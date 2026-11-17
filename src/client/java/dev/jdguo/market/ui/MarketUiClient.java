@@ -23,6 +23,7 @@ public final class MarketUiClient implements ClientModInitializer {
     private static JsonObject latest = new JsonObject();
     private static boolean openRequested;
     private static int awaitingOpen;
+    private static boolean personalRequested;
     @Override public void onInitializeClient() {
         ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "open"), (client, handler, buf, response) -> {
             String json = buf.readString(262144);
@@ -42,6 +43,10 @@ public final class MarketUiClient implements ClientModInitializer {
                     }
                 } catch (RuntimeException ignored) { }
             });
+        });
+        ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "personal"), (client, handler, buf, response) -> {
+            String json=buf.readString(262144);
+            client.execute(()->{try{if(client.currentScreen instanceof PersonalMarketScreen screen)screen.accept(JsonParser.parseString(json).getAsJsonObject());}catch(RuntimeException ignored){}});
         });
         LandConfirmScreen.register();
         ClientPlayNetworking.registerGlobalReceiver(SYNC, (client, handler, buf, response) -> {
@@ -69,6 +74,7 @@ public final class MarketUiClient implements ClientModInitializer {
             latestCatalog = null;
             catalogPages = new CatalogPages();
             openRequested = false;
+            personalRequested = false;
             awaitingOpen = 0;
         });
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -86,14 +92,23 @@ public final class MarketUiClient implements ClientModInitializer {
                 inform(client, "市场界面未收到服务器响应，请检查两端模组版本；可尝试 /market ui。");
             }
         });
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, access) -> dispatcher.register(literal("marketnoteui").executes(context -> {personalRequested=true;openRequested=true;return 1;})));
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, access) -> dispatcher.register(literal("marketui").executes(context -> {
             openRequested = true;
             return 1;
         })));
     }
+    /** Optional bank-client bridge: no server command or chat screen is required. */
+    public static boolean requestPersonalMarket() {
+        if (!available()) return false;
+        personalRequested = true;
+        openRequested = true;
+        return true;
+    }
     private static void open(MinecraftClient client) {
         var screen = new MarketScreen(latest);
         client.setScreen(screen);
+        if(personalRequested){personalRequested=false;client.setScreen(new PersonalMarketScreen(screen));action("notes");return;}
         if (latestCatalog != null) screen.catalog(latestCatalog.currency(), latestCatalog.items());
         String currency = MarketScreen.text(latest, "defaultCurrency");
         catalog(currency.isBlank() ? "note" : currency);

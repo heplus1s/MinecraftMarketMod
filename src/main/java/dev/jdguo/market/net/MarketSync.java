@@ -71,6 +71,7 @@ public final class MarketSync {
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             LISTENING.remove(handler.player.getUuid()); CATALOG_REQUESTS.remove(handler.player.getUuid());
+            PersonalMarketChannel.disconnect(handler.player.getUuid());
         });
     }
 
@@ -113,6 +114,9 @@ public final class MarketSync {
         String[] parts = action.trim().split("\\s+");
         if (parts.length == 0 || parts[0].isBlank()) {
             return;
+        }
+        if (parts[0].equals("notes") || parts[0].equals("notequote") || parts[0].equals("notebuy")) {
+            PersonalMarketChannel.act(player, parts); return;
         }
         MarketDesk desk = MarketDesk.get(player.getServer());
         if ("catalog".equals(parts[0]) && parts.length == 2) {
