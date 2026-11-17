@@ -56,6 +56,10 @@ public final class MarketDesk {
     }
 
     public MarketReply listItem(ServerPlayerEntity player, boolean shop, long price, int requested, String currency) {
+        return listItem(player, shop, price, requested, currency, 100);
+    }
+    public MarketReply listItem(ServerPlayerEntity player, boolean shop, long price, int requested, String currency, int percent) {
+        if (percent < 1 || percent > 1000) return fail("price");
         currency = dev.jdguo.market.integrate.MarketCurrencies.resolve(currency);
         if (currency == null) return fail("unknown_currency");
         ItemStack hand = player.getMainHandStack();
@@ -63,7 +67,9 @@ public final class MarketDesk {
             return fail("empty_hand");
         }
         int count = requested <= 0 ? hand.getCount() : requested;
-        if (count <= 0 || count > hand.getCount() || count > hand.getMaxCount()) {
+        int available = 0;
+        for (ItemStack stack : player.getInventory().main) if (ItemStack.canCombine(hand, stack)) available += stack.getCount();
+        if (count <= 0 || count > available || count > 2304) {
             return fail("bad_count");
         }
         if (!shop && price <= 0) {
@@ -75,11 +81,12 @@ public final class MarketDesk {
         String itemId = net.minecraft.registry.Registries.ITEM.getId(hand.getItem()).toString();
         BigInteger quote = shop ? ShopPrices.quote(itemId, currency) : null;
         ItemStack listed = hand.copy();
-        listed.setCount(count);
+        listed.setCount(1);
         Listing listing = Listing.item(UUID.randomUUID(), player.getUuid(), player.getGameProfile().getName(),
                 Proceeds.SELLER, shop ? PriceMode.SHOP : PriceMode.CUSTOM,
                 shop ? BigInteger.ZERO : BigInteger.valueOf(price), currency, count, itemId,
                 listed.writeNbt(new NbtCompound()));
+        if (shop) { listing.shopPercent(percent); quote = ShopPrices.quote(listing); }
         if (!book().add(listing)) {
             return fail("limit");
         }
@@ -87,7 +94,12 @@ public final class MarketDesk {
         // Interrupted intents remain RESERVED; neither restart nor cancel may duplicate them.
         book().lockItem(listing.id());
         data.persistNow();
-        hand.decrement(count);
+        int remaining = count;
+        for (ItemStack stack : player.getInventory().main) {
+            if (remaining == 0) break;
+            if (!ItemStack.canCombine(listed, stack)) continue;
+            int take = Math.min(remaining, stack.getCount()); stack.decrement(take); remaining -= take;
+        }
         try {
             dev.jdguo.market.world.DurablePlayerInventory.save(player);
             book().unlockItem(listing.id());
@@ -99,10 +111,10 @@ public final class MarketDesk {
         MarketSync.broadcast(server);
         Text name = listed.getName().copy();
         String priceText = shop
-                ? "价格按商店当时的参考价格结算"
+                ? "价格按商店参考价的 " + percent + "% 浮动（单价向上取整）"
                 : "自定义价格每件 " + money(BigInteger.valueOf(price), currency) + "，合计 " + money(listing.customTotal(), currency);
         MutableText line = MarketMessages.line("已挂牌 " + listing.shortId() + "。", name,
-                " × " + count + "，" + priceText + "。买方需要一次买下整笔挂牌。货款交给卖方，不进入中央银行。");
+                " × " + count + "，" + priceText + "。支持按数量部分成交。货款交给卖方，不进入中央银行。");
         if (shop && quote == null) {
             return changed("listed", List.of(line, MarketMessages.line("商店目前没有给出参考价格。如果购买时仍然没有价格，交易不会成交。")), List.of(view(listing, null)));
         }
@@ -206,6 +218,9 @@ public final class MarketDesk {
         return buy(player, id, null);
     }
     public MarketReply buy(ServerPlayerEntity player, String id, BigInteger maximumTotal) {
+        return buy(player, id, maximumTotal, 0);
+    }
+    public MarketReply buy(ServerPlayerEntity player, String id, BigInteger maximumTotal, int requested) {
         MarketBook.Lookup lookup = book().find(id);
         if (lookup.listing() == null) {
             return fail(lookup.ambiguous() ? "ambiguous" : "missing");
@@ -214,22 +229,35 @@ public final class MarketDesk {
         if (listing.kind() != ListingKind.ITEM && !LandBridge.available()) {
             return fail("land_missing");
         }
+        if (requested < 0 || (requested > 0 && (listing.kind() != ListingKind.ITEM || requested > listing.count()))) return fail("bad_count");
+        if (listing.status() != dev.jdguo.market.listing.ListingStatus.OPEN) return fail("reserved");
+        if (player.getUuid().equals(listing.seller())) return fail("self");
+        int quantity = requested > 0 ? requested : listing.count();
         BigInteger amount;
         if (listing.priceMode() == PriceMode.SHOP) {
-            BigInteger unit = ShopPrices.quote(listing.itemId(), listing.currency());
+            BigInteger unit = ShopPrices.quote(listing);
             if (unit == null) {
                 return fail("shop_missing");
             }
-            amount = unit.multiply(BigInteger.valueOf(listing.count()));
+            amount = unit.multiply(BigInteger.valueOf(quantity));
         } else {
-            amount = listing.customTotal();
+            amount = listing.kind() == ListingKind.ITEM ? listing.unitPrice().multiply(BigInteger.valueOf(quantity)) : listing.customTotal();
         }
         if (!withinMaximum(amount, maximumTotal)) {
             return fail("price_moved");
         }
+        UUID originalId = listing.id();
+        if (listing.kind() == ListingKind.ITEM && quantity < listing.count()) {
+            listing = book().splitItem(listing.id(), quantity);
+            data.persistNow(); // Persist both remaining offer and split escrow before any payment.
+        }
         Checkout.Outcome outcome = Checkout.buy(book(), listing.id(), player.getUuid(), player.getGameProfile().getName(),
                 amount, BankBridge.payments(), data::deliver, data::persistNow);
         if (!outcome.ok()) {
+            if (!originalId.equals(listing.id()) && listing.status() == dev.jdguo.market.listing.ListingStatus.OPEN
+                    && book().get(listing.id()).isPresent()) {
+                book().restoreSplit(originalId, listing.id()); data.persistNow();
+            }
             if ("stale".equals(outcome.code()) && listing.parcelId() != null) {
                 LandBridge.clear(listing.parcelId());
             }
@@ -270,7 +298,7 @@ public final class MarketDesk {
             book().lockItem(listing.id());
             data.persistNow();
             book().remove(listing.id());
-            book().addPending(listing.seller(), stack.writeNbt(new NbtCompound()));
+            book().addPending(listing.seller(), ItemDelivery.write(stack));
             data.persistNow();
             ServerPlayerEntity seller = server.getPlayerManager().getPlayer(listing.seller());
             if (seller != null) data.deliverPending(seller);
@@ -332,7 +360,7 @@ public final class MarketDesk {
         List<Text> lines = new ArrayList<>();
         lines.add(summary(listing));
         if (listing.kind() == ListingKind.ITEM) {
-            lines.add(MarketMessages.line("编号 " + listing.id() + "。一次买下整笔，不能只买一部分。"));
+            lines.add(MarketMessages.line("编号 " + listing.id() + "。物品支持按数量部分成交，领地整笔成交。"));
             var bid = ShopPrices.exactQuote(listing.itemId(), listing.currency(), false);
             var ask = ShopPrices.exactQuote(listing.itemId(), listing.currency(), true);
             if (bid != null && ask != null) {
@@ -477,7 +505,7 @@ public final class MarketDesk {
         if (listing.priceMode() != PriceMode.SHOP) {
             return null;
         }
-        return ShopPrices.quote(listing.itemId(), listing.currency());
+        return ShopPrices.quote(listing);
     }
 
     private static Text itemName(Listing listing) {

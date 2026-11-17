@@ -93,12 +93,12 @@ public final class MarketSavedData extends PersistentState {
                 continue;
             }
             int before = stack.getCount();
-            player.getInventory().insertStack(stack);
+            ItemDelivery.insert(player, stack);
             if (stack.getCount() < before) {
                 moved = true;
             }
             if (!stack.isEmpty()) {
-                left.add(new MarketBook.PendingItem(player.getUuid(), stack.writeNbt(new NbtCompound()), waiting.createdAt()));
+                left.add(new MarketBook.PendingItem(player.getUuid(), ItemDelivery.write(stack), waiting.createdAt()));
                 remain = true;
             }
         }

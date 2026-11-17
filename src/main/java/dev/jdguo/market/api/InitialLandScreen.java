@@ -30,7 +30,7 @@ final class InitialLandScreen extends GenericContainerScreenHandler {
     }
     private static void icon(SimpleInventory menu, int slot, ItemStack stack, String label) { stack.setCustomName(Text.literal(label)); menu.setStack(slot, stack); }
     static void open(ServerPlayerEntity player, String dimension, int[] coordinates, JsonObject quote) {
-        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, inv, who) -> new InitialLandScreen(id, inv, player, dimension, coordinates, quote, new SimpleInventory(27)), Text.literal("土地首售 · 确认购买")));
+        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, inv, who) -> new InitialLandScreen(id, inv, player, dimension, coordinates, quote, new SimpleInventory(27)), Text.literal("无主地块出售 · 确认购买")));
     }
     @Override public void onSlotClick(int slot, int button, SlotActionType action, PlayerEntity player) {
         if (player != viewer || used || action != SlotActionType.PICKUP || button != 0) return;

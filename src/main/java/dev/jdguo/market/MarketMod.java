@@ -36,6 +36,7 @@ public final class MarketMod implements ModInitializer {
         MarketCommands.register();
         dev.jdguo.market.outlet.MarketOutlets.register();
         MarketSync.register();
+        dev.jdguo.market.api.LandUiChannel.register();
         ServerLifecycleEvents.SERVER_STARTING.register(MarketRuntime::attach);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             MarketRuntime.attach(server);

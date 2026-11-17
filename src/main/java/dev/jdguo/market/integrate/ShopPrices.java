@@ -20,6 +20,12 @@ public final class ShopPrices {
     private ShopPrices() {
     }
 
+    public static BigInteger quote(dev.jdguo.market.listing.Listing listing) {
+        BigInteger base = quote(listing.itemId(), listing.currency());
+        if (base == null) return null;
+        return base.multiply(BigInteger.valueOf(listing.shopPercent())).add(BigInteger.valueOf(99)).divide(BigInteger.valueOf(100));
+    }
+
     public static BigInteger quote(String itemId, String currency) {
         if (itemId == null || itemId.isBlank() || currency == null || currency.isBlank()) {
             return null;

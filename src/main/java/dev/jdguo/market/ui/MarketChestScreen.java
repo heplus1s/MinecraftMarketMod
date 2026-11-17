@@ -43,6 +43,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
     private int sellKind; // 0 held item, 1 parcel, 2 current chunk
     private long price = 1;
     private int count = 1;
+    private int purchaseCount = 1;
     private String currency = MarketConfig.get().currency();
 
     private MarketChestScreen(int id, PlayerInventory inventory, ServerPlayerEntity viewer, SimpleInventory menu) {
@@ -88,7 +89,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         for (int i = page * 36; i < Math.min(listings.size(), (page + 1) * 36); i++) {
             Listing listing = listings.get(i); shown.add(listing.id());
             ListingView view = desk().view(listing, listing.priceMode() == PriceMode.SHOP
-                    ? ShopPrices.quote(listing.itemId(), listing.currency()) : null);
+                    ? ShopPrices.quote(listing) : null);
             String title = listing.kind() == ListingKind.ITEM ? listing.itemId() + " × " + listing.count() : listing.parcelName();
             icon(i - page * 36, listing.kind() == ListingKind.ITEM ? Items.CHEST : Items.GRASS_BLOCK,
                     title, "编号 " + listing.shortId(), "卖方 " + listing.sellerName(),
@@ -97,11 +98,18 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         }
         Listing current = selected == null ? null : desk().book().get(selected).orElse(null);
         if (current != null) {
-            ListingView view = desk().view(current, current.priceMode() == PriceMode.SHOP ? ShopPrices.quote(current.itemId(), current.currency()) : null);
-            displayedTotal = view.totalPrice().isBlank() ? null : new BigInteger(view.totalPrice());
-            icon(38, Items.PAPER, "已选 " + current.shortId(), "卖方 " + current.sellerName(), "整单 " + view.totalPrice() + " " + MarketMessages.currency(current.currency()), "买下全部 " + current.count() + " 件/区块");
+            ListingView view = desk().view(current, current.priceMode() == PriceMode.SHOP ? ShopPrices.quote(current) : null);
+            purchaseCount = Math.min(Math.max(1,purchaseCount),current.count());
+            displayedTotal = view.totalPrice().isBlank() ? null : current.kind() == ListingKind.ITEM
+                    ? new BigInteger(view.unitPrice()).multiply(BigInteger.valueOf(purchaseCount)) : new BigInteger(view.totalPrice());
+            if (current.kind() == ListingKind.ITEM) {
+                icon(37, Items.REDSTONE, "买入数量 -1", "当前 " + purchaseCount);
+                icon(39, Items.GLOWSTONE_DUST, "买入数量 +1", "当前 " + purchaseCount);
+                icon(41, Items.CHEST, "买入数量 +64", "最多 " + current.count());
+            }
+            icon(38, Items.PAPER, "已选 " + current.shortId(), "卖方 " + current.sellerName(), "整单 " + view.totalPrice() + " " + MarketMessages.currency(current.currency()), "选择购买 " + (current.kind() == ListingKind.ITEM ? purchaseCount + " 件" : "整笔领地"));
             if (current.seller().equals(viewer.getUuid())) icon(42, Items.BARRIER, "确认撤销自己的挂牌", "托管物品退回背包或待领取记录");
-            else icon(40, Items.EMERALD, "确认购买整单", "从银行扣除指定货币，不自动换汇", "币种 " + MarketMessages.currency(current.currency()), current.priceMode() == PriceMode.SHOP ? "浮动报价将在点击时重新读取" : "整单 " + view.totalPrice());
+            else icon(40, Items.EMERALD, "确认购买 " + (current.kind() == ListingKind.ITEM ? purchaseCount + " 件" : "整笔领地"), "从银行扣除指定货币，不自动换汇", "币种 " + MarketMessages.currency(current.currency()), current.priceMode() == PriceMode.SHOP ? "浮动报价将在点击时重新读取" : "本次合计 " + displayedTotal);
         } else icon(38, Items.PAPER, "选择挂牌查看详情", "没有买单簿：本页为卖方挂牌，不是虚构的买卖深度");
         icon(45, Items.ARROW, "上一页"); icon(46, Items.ARROW, "下一页");
         icon(47, Items.PLAYER_HEAD, mine ? "我的挂牌 · 点击查看全部" : "全部挂牌 · 点击查看我的");
@@ -113,9 +121,10 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         List<MarketCurrencies.Option> options = MarketCurrencies.options();
         if (!options.isEmpty() && options.stream().noneMatch(o -> o.id().equals(currency))) currency = options.get(0).id();
         ItemStack hand = viewer.getMainHandStack();
-        int available = hand.getCount();
+        int available = 0;
+        for (ItemStack stack : viewer.getInventory().main) if (ItemStack.canCombine(hand, stack)) available += stack.getCount();
         count = Math.max(1, Math.min(count, Math.max(1, available)));
-        icon(4, Items.CHEST, hand.isEmpty() ? "请先把物品拿在主手" : hand.getName().getString(), "当前持有 " + available, "只挂牌主手物品，本界面不接受放入物品");
+        icon(4, Items.CHEST, hand.isEmpty() ? "请先把物品拿在主手" : hand.getName().getString(), "当前持有 " + available, "按主手物品类型从主库存托管同种同属性物品");
         icon(6, Items.GRASS_BLOCK, "挂牌类型 " + (sellKind == 0 ? "主手物品" : sellKind == 1 ? "脚下整宗土地" : "脚下区块"), "点击切换；土地价格为整单总价");
         if (landTarget != null) {
             icon(4, Items.GRASS_BLOCK, "目标宗地 " + landTarget, landChunks.isEmpty() ? "整宗地挂牌" : "选中 " + landChunks.size() + " 个区块");
@@ -159,15 +168,18 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
                 case 45 -> selling = false;
                 default -> { }
             }
-        } else if (slot < shown.size()) selected = shown.get(slot);
+        } else if (slot < shown.size()) { selected = shown.get(slot); purchaseCount = 1; }
         else switch (slot) {
+            case 37 -> purchaseCount = Math.max(1, purchaseCount-1);
+            case 39 -> purchaseCount++;
+            case 41 -> purchaseCount += 64;
             case 45 -> { page--; selected = null; }
             case 46 -> { page++; selected = null; }
             case 47 -> { mine = !mine; page = 0; selected = null; }
             case 48 -> { landTarget = null; landChunks = List.of(); sellKind = 0; selling = true; count = 1; }
             case 40, 42 -> {
                 if (selected != null) {
-                    MarketReply reply = slot == 40 ? (displayedTotal == null ? MarketReply.message(false, "shop_missing", MarketMessages.line("暂无有效报价，请刷新。")) : desk().buy(viewer, selected.toString(), displayedTotal)) : desk().cancel(viewer, selected.toString(), false);
+                    MarketReply reply = slot == 40 ? (displayedTotal == null ? MarketReply.message(false, "shop_missing", MarketMessages.line("暂无有效报价，请刷新。")) : desk().buy(viewer, selected.toString(), displayedTotal, desk().book().get(selected).map(l -> l.kind() == ListingKind.ITEM ? purchaseCount : 0).orElse(0))) : desk().cancel(viewer, selected.toString(), false);
                     reply.lines().forEach(line -> viewer.sendMessage(line, false));
                     selected = null;
                 }

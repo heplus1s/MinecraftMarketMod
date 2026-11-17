@@ -108,6 +108,7 @@ public final class MarketSync {
             case "price" -> desk.price(player);
             case "search" -> search(desk, player, parts);
             case "list" -> list(desk, player, parts);
+            case "listshop" -> parts.length == 4 && number(parts[1]) > 0 && number(parts[3]) > 0 ? desk.listItem(player, true, 0, number(parts[1]), parts[2], number(parts[3])) : unknown();
             case "land" -> land(desk, player, parts, false);
             case "server" -> player.hasPermissionLevel(2) ? land(desk, player, parts, true) : unknown();
             default -> unknown();
@@ -120,6 +121,8 @@ public final class MarketSync {
         if (parts.length == 3 && parts[2].matches("[0-9]{1,64}")) {
             return desk.buy(player, parts[1], new java.math.BigInteger(parts[2]));
         }
+        if (parts.length == 4 && parts[2].matches("[0-9]{1,64}") && number(parts[3]) > 0)
+            return desk.buy(player, parts[1], new java.math.BigInteger(parts[2]), number(parts[3]));
         return unknown();
     }
 
@@ -233,6 +236,8 @@ public final class MarketSync {
         root.addProperty("protocol", PROTOCOL);
         root.addProperty("explicitCurrency", true);
         root.addProperty("maximumTotal", true);
+        root.addProperty("partialItems", true);
+        root.addProperty("bulkLimit", 2304);
         root.addProperty("defaultCurrency", dev.jdguo.market.config.MarketConfig.get().currency());
         JsonArray currencies = new JsonArray();
         for (var option : dev.jdguo.market.integrate.MarketCurrencies.options()) {
@@ -248,7 +253,7 @@ public final class MarketSync {
         int kept = 0;
         for (var listing : open) {
             ListingView view = desk.view(listing, listing.priceMode() == dev.jdguo.market.listing.PriceMode.SHOP
-                    ? dev.jdguo.market.integrate.ShopPrices.quote(listing.itemId(), listing.currency()) : null);
+                    ? dev.jdguo.market.integrate.ShopPrices.quote(listing) : null);
             if (kept++ >= 256) {
                 break;
             }
@@ -265,6 +270,14 @@ public final class MarketSync {
             one.addProperty("currency", view.currency());
             one.addProperty("count", view.count());
             one.addProperty("itemId", view.itemId());
+            one.addProperty("itemName", listing.kind() == dev.jdguo.market.listing.ListingKind.ITEM
+                    ? dev.jdguo.market.world.ItemDelivery.read(listing.item()).getName().getString() : view.parcelName());
+            one.addProperty("shopPercent", listing.shopPercent());
+            one.addProperty("currencyLabel", dev.jdguo.market.message.MarketMessages.currency(view.currency()));
+            var shopBid = dev.jdguo.market.integrate.ShopPrices.exactQuote(listing.itemId(), listing.currency(), false);
+            var shopAsk = dev.jdguo.market.integrate.ShopPrices.exactQuote(listing.itemId(), listing.currency(), true);
+            one.addProperty("shopBid", shopBid == null ? "" : shopBid.stripTrailingZeros().toPlainString());
+            one.addProperty("shopAsk", shopAsk == null ? "" : shopAsk.stripTrailingZeros().toPlainString());
             one.addProperty("dimension", view.dimension());
             one.addProperty("parcelId", view.parcelId());
             one.addProperty("parcelName", view.parcelName());
@@ -279,6 +292,15 @@ public final class MarketSync {
             listings.add(one);
         }
         root.add("listings", listings);
+        JsonArray trades = new JsonArray();
+        for (var trade : desk.book().recentTrades()) {
+            if (trade.getString("ItemId").isBlank() || trade.getInt("Count") <= 0) continue;
+            JsonObject t = new JsonObject();
+            t.addProperty("itemId", trade.getString("ItemId")); t.addProperty("currency", trade.getString("Currency"));
+            t.addProperty("count", trade.getInt("Count")); t.addProperty("amount", trade.getString("Amount")); t.addProperty("at", trade.getLong("At"));
+            trades.add(t);
+        }
+        root.add("trades", trades);
         return root.toString();
     }
 
