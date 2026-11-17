@@ -39,7 +39,7 @@ public final class MarketScreen extends Screen {
         layout=MarketLayout.at(width,height);priceField=null;countField=null;buyField=null;filterField=null;percentField=null;
         if(!MarketLayout.supported(width,height)){button("关闭",Math.max(4,width-62),8,54,this::close);return;}
         if(currency.isBlank())currency=text(data,"defaultCurrency");if(currency.isBlank())currency="note";
-        button(landMode?"模式：领地转让":"模式：商品现货",8,6,150,()->{capture();landMode=!landMode;selectedItem="";selectedOffer="";category="全部";filter="";page=0;bookPage=0;confirming=false;rebuild();});
+        button(landMode?"领地 → 个人币":"商品 → 领地",8,6,150,()->{capture();if(landMode){landMode=false;client.setScreen(new PersonalMarketScreen(this));MarketUiClient.action("notes");return;}landMode=true;selectedItem="";selectedOffer="";category="全部";filter="";page=0;bookPage=0;confirming=false;rebuild();});
         button("计价: "+currencyLabel(currency),Math.max(160,width-300),6,176,()->{
             capture();var cs=array("currencies");if(cs.isEmpty())return;int i=0;for(;i<cs.size();i++)if(currency.equals(text(cs.get(i),"id")))break;
             currency=text(cs.get((i+1)%cs.size()),"id");selectedOffer="";confirming=false;bookPage=0;catalogCurrency="";MarketUiClient.catalog(currency);rebuild();
