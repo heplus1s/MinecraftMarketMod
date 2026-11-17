@@ -10,5 +10,17 @@ class MarketLayoutTest {
    assertTrue(l.details().y()+l.details().height()<l.order().y());assertTrue(l.details().x()+l.details().width()<l.book().x());assertTrue(l.listings().x()+l.listings().width()<l.order().x());
   }
  }
+ @Test void interactiveRowsStayAbovePaginationAndOrderButtons(){
+  for(int[] size:new int[][]{{480,300},{640,360},{800,440},{854,480},{1280,720},{1920,1080}}){var l=MarketLayout.at(size[0],size[1]);var list=l.listings();var book=l.book();var order=l.order();
+   int listRows=Math.max(1,(list.height()-118)/32),bookRows=Math.max(1,(book.height()-63)/23);
+   assertTrue(108+(listRows-1)*32+9<=list.height()-23,"quote clear of pager");
+   assertTrue(24+(bookRows-1)*23+18<=book.height()-24,"offer clear of pager");
+   int column=(order.width()-20)/2;
+   assertTrue(column-56>=80,"price field keeps usable typing area");
+   assertTrue(107+18<=order.height(),"submit contained");
+   assertTrue(29+18<54,"input rows separate");
+   assertTrue(91+9<107,"labels clear of submit");
+  }
+ }
  @Test void tooSmallViewportsRequestLowerGuiScaleInsteadOfHidingSections(){assertFalse(MarketLayout.supported(427,240));assertFalse(MarketLayout.supported(640,240));assertTrue(MarketLayout.supported(640,360));}
 }

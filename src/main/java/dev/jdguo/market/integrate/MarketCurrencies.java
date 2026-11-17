@@ -1,7 +1,6 @@
 package dev.jdguo.market.integrate;
 
 import dev.jdguo.market.config.MarketConfig;
-import dev.jdguo.market.message.MarketMessages;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -12,21 +11,31 @@ public final class MarketCurrencies {
     public static List<Option> options() {
         try {
             Class<?> runtime = Class.forName("dev.jdguo.bank.persistence.BankRuntime");
-            Object config = runtime.getField("config").get(null);
-            Iterable<?> defs = (Iterable<?>) config.getClass().getMethod("currencies").invoke(config);
+            Object books = runtime.getMethod("books").invoke(null);
+            Iterable<?> defs = (Iterable<?>) books.getClass().getMethod("currencies").invoke(books);
             List<Option> result = new ArrayList<>();
             for (Object def : defs) {
                 String id = (String) def.getClass().getMethod("id").invoke(def);
                 String label = (String) def.getClass().getMethod("name").invoke(def);
-                if (validId(id)) result.add(new Option(id, label == null ? id : label));
+                if (validId(id)) result.add(new Option(id, label == null || label.isBlank() ? fallbackLabel(id) : label));
             }
             return withPersonal(result);
-        } catch (ReflectiveOperationException | LinkageError exception) {
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
             // Keep standalone listing usable; checkout still refuses without a bank.
             String id = MarketConfig.get().currency();
-            return List.of(new Option(id, MarketMessages.currency(id)));
+            return List.of(new Option(id, fallbackLabel(id)));
         }
     }
+    public static String fallbackLabel(String id) {
+        if (id == null) return "";
+        return switch (id) {
+            case "note" -> "央行券";
+            case "diamond" -> "钻石";
+            case "copper" -> "铜锭";
+            default -> id;
+        };
+    }
+
     private static List<Option> withPersonal(List<Option> base) {
         List<Option> result = new ArrayList<>(base);
         try {
@@ -38,7 +47,7 @@ public final class MarketCurrencies {
                 String name = String.valueOf(note.getClass().getMethod("name").invoke(note));
                 result.add(new Option("personal:" + id, name));
             }
-        } catch (ReflectiveOperationException | LinkageError unavailable) { /* absent bank or old API */ }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError unavailable) { /* absent bank or old API */ }
         return List.copyOf(result);
     }
     public static List<Option> landOptions() { return options(); }

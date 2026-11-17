@@ -12,6 +12,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 /** Independent product quotes, real offers, and explicit physical-item spot orders. */
 public final class MarketScreen extends Screen {
@@ -29,7 +30,7 @@ public final class MarketScreen extends Screen {
     private String currencyLabel(String id){for(var c:array("currencies"))if(id.equals(text(c,"id")))return text(c,"label");return "note".equals(id)?"央行券":id.startsWith("personal:")?"个人币（名称待同步）":id;}
     private String name(JsonObject row){String n=text(row,"itemName");String key=text(row,"translationKey");if(!Boolean.parseBoolean(text(row,"hasVariant"))&&!key.isBlank())n=Text.translatable(key).getString();return n.isBlank()?text(row,"itemId"):n;}
     private boolean own(JsonObject row){return row!=null&&client!=null&&client.player!=null&&client.player.getUuidAsString().equals(text(row,"sellerId"));}
-    void update(JsonObject next){capture();data=next;confirming=false;if(!editing())rebuild();}
+    void update(JsonObject next){capture();JsonObject previous=offer();data=next;if(!Objects.equals(previous,offer()))confirming=false;if(!editing())rebuild();}
     void catalog(String denomination,List<JsonObject> items){if(!currency.isBlank()&&!currency.equals(denomination))return;capture();catalogCurrency=denomination;catalog.clear();catalog.addAll(items);if(!editing())rebuild();}
     void result(JsonObject result){pending=false;confirming=false;notice="";if(result.has("lines"))for(var line:result.getAsJsonArray("lines"))notice+=line.getAsString()+" ";MarketUiClient.refresh();rebuild();}
     private void capture(){if(priceField!=null)price=priceField.getText();if(countField!=null)count=countField.getText();if(buyField!=null)buyCount=buyField.getText();if(filterField!=null)filter=filterField.getText();if(percentField!=null)percent=percentField.getText();}
@@ -63,7 +64,7 @@ public final class MarketScreen extends Screen {
     }
     private String categoryLabel(String key){return switch(key){case "land" -> "领地";case "blocks" -> "方块";case "tools" -> "工具";case "weapons" -> "武器";case "armor" -> "盔甲";case "food" -> "食物";case "other" -> "其他物品";default -> key;};}
     private int listCapacity(){return Math.max(1,(layout.listings().height()-118)/32);}
-    private void selectProduct(JsonObject row){capture();selectedItem=key(row);selectedOffer="";buyCount="1";confirming=false;bookPage=0;rebuild();}
+    private void selectProduct(JsonObject row){capture();selectedItem=key(row);if(landMode){currency=text(row,"currency");MarketUiClient.catalog(currency);}selectedOffer="";buyCount="1";confirming=false;bookPage=0;rebuild();}
     private void selectOffer(JsonObject row){capture();selectedItem=key(row);selectedOffer=text(row,"id");buyCount="1";confirming=false;rebuild();}
     private static boolean item(JsonObject row){return row!=null&&!text(row,"itemId").isBlank();}
     private static String key(JsonObject row){return item(row)?text(row,"itemId"):"land:"+text(row,"id");}
@@ -82,7 +83,7 @@ public final class MarketScreen extends Screen {
         var buy=button(own(row)?"撤销这笔挂牌":confirming?"确认付款":"买入选中卖单",x,y+107,w,()->{
             capture();JsonObject current=offer();if(current==null||pending)return;if(own(current)){send("cancel "+text(current,"id"));return;}
             try{int n=item(current)?Integer.parseInt(buyCount):1;if(n<=0||(item(current)&&n>Integer.parseInt(text(current,"count"))))throw new IllegalArgumentException();BigInteger total=item(current)?new BigInteger(text(current,"unitPrice")).multiply(BigInteger.valueOf(n)):new BigInteger(text(current,"totalPrice"));
-                if(!confirming){confirming=true;notice="确认买入 "+n+" 件 "+name(current)+"（"+attributes(current)+"），最高支付 "+total+" "+currencyLabel(currency)+"。";rebuild();return;}
+                if(!confirming){confirming=true;notice=(item(current)?"确认买入 "+n+" 件 ":"确认购买整宗领地 ")+name(current)+"（"+attributes(current)+"），最高支付 "+total+" "+currencyLabel(currency)+"。";rebuild();return;}
                 send("buy "+selectedOffer+" "+total+(item(current)?" "+n:""));
             }catch(RuntimeException ex){notice="数量须为正整数且不超过卖单剩余量；无报价不能成交。";confirming=false;}});buy.active=row!=null&&!pending;
         if(landMode){
@@ -114,7 +115,7 @@ public final class MarketScreen extends Screen {
     @Override public void render(DrawContext c,int mx,int my,float delta){renderBackground(c);c.fill(0,0,width,height,0xff0c1017);
         if(!MarketLayout.supported(width,height)){line(c,"请降低 GUI 缩放，至少需要 480×300。",8,42,width-16,0xffffc66d);line(c,"保留品种、行情、盘口和交易区同屏显示。",8,58,width-16,0xff99abbc);super.render(c,mx,my,delta);return;}
 
-        var l=layout.listings();panel(c,l,landMode?"领地挂牌":"品种行情");int capacity=listCapacity();for(int i=0;i<capacity&&page*capacity+i<rows.size();i++){var r=rows.get(page*capacity+i);line(c,landMode?"整宗 "+text(r,"totalPrice"):"商店卖 "+quote(r,"shopAsk"),l.x()+7,l.y()+108+i*32,l.width()-14,0xff8f9baa);}if(rows.isEmpty())line(c,catalog.isEmpty()?"正在同步品种…":"无匹配品种",l.x()+5,l.y()+91,l.width()-10,0xff8f9baa);
+        var l=layout.listings();panel(c,l,landMode?"领地挂牌":"品种行情");int capacity=listCapacity();for(int i=0;i<capacity&&page*capacity+i<rows.size();i++){var r=rows.get(page*capacity+i);line(c,landMode?"整宗 "+text(r,"totalPrice")+" "+currencyLabel(text(r,"currency")):"商店卖 "+quote(r,"shopAsk"),l.x()+7,l.y()+108+i*32,l.width()-14,0xff8f9baa);}if(rows.isEmpty())line(c,landMode?"暂无匹配领地挂牌":catalog.isEmpty()?"正在同步品种…":"无匹配品种",l.x()+5,l.y()+91,l.width()-10,0xff8f9baa);
         var p=product();var d=layout.details();panel(c,d,p==null?"请选择品种":name(p));
         if(landMode){
             line(c,"挂牌人: "+text(p,"sellerName"),d.x()+6,d.y()+25,d.width()-12,0xff99abbc);
@@ -134,6 +135,7 @@ public final class MarketScreen extends Screen {
         String held=client!=null&&client.player!=null?client.player.getMainHandStack().getName().getString():"—";line(c,landMode?"请站在自己拥有的领地内":"当前主手: "+held,sx,y+78,w,0xff99abbc);line(c,(landMode?"整宗总价 · ":"同属性库存 · ")+currencyLabel(currency),sx,y+91,w,0xff99abbc);
         line(c,notice.isBlank()?(landMode?"领地整宗转让，不按件成交。购买时服务端复核所有权。":"目录无挂单也有行情 · * 为特殊属性卖单（悬停查看） · 每 5 秒刷新"):notice,7,height-15,width-14,0xffffc66d);super.render(c,mx,my,delta);
         if(mx>=b.x()+61&&mx<b.x()+b.width()&&my>=b.y()+b.height()-24&&my<b.y()+b.height())c.drawOrderedTooltip(textRenderer,textRenderer.wrapLines(Text.literal("当前仅支持真实卖单；尚未开放买入委托。"),180),mx,my);
+        if(landMode&&p!=null&&p.has("chunks")&&mx>=d.x()&&mx<d.x()+d.width()&&my>=d.y()+53&&my<d.y()+65)c.drawOrderedTooltip(textRenderer,textRenderer.wrapLines(Text.literal("区块位置: "+p.get("chunks")+(Boolean.parseBoolean(text(p,"chunksTruncated"))?"（仅显示前 64 个区块）":"")),Math.max(120,width-48)),mx,my);
         if(!notice.isBlank()&&my>=height-22)c.drawOrderedTooltip(textRenderer,textRenderer.wrapLines(Text.literal(notice),Math.max(120,width-48)),mx,my);
     }
     private static String empty(String s){return s.isBlank()?"无参考价":s;}

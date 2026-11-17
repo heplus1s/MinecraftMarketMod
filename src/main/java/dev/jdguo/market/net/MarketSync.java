@@ -54,7 +54,7 @@ public final class MarketSync {
             server.execute(() -> {
                 if (version == PROTOCOL) {
                     LISTENING.add(player.getUuid());
-                    broadcast(server);
+                    send(player, SYNC, snapshot(MarketDesk.get(server)));
                 } else {
                     LISTENING.remove(player.getUuid());
                 }
@@ -309,6 +309,7 @@ public final class MarketSync {
             one.addProperty("parcelName", view.parcelName());
             JsonArray chunks = new JsonArray();
             view.chunks().stream().limit(64).forEach(chunks::add);
+            one.addProperty("chunkCount", view.chunks().size());
             one.addProperty("chunksTruncated", view.chunks().size() > 64);
             one.add("chunks", chunks);
             if (listings.toString().length() + one.toString().length() > 175000) {

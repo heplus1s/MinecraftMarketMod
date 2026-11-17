@@ -91,7 +91,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
             Listing listing = listings.get(i); shown.add(listing.id());
             ListingView view = desk().view(listing, listing.priceMode() == PriceMode.SHOP
                     ? ShopPrices.quote(listing) : null);
-            String title = listing.kind() == ListingKind.ITEM ? listing.itemId() + " × " + listing.count() : listing.parcelName();
+            String title = listing.kind() == ListingKind.ITEM ? listing.itemId() + " × " + listing.count() : view.parcelName();
             icon(i - page * 36, listing.kind() == ListingKind.ITEM ? Items.CHEST : Items.GRASS_BLOCK,
                     title, "编号 " + listing.shortId(), "卖方 " + listing.sellerName(),
                     "整单 " + (view.totalPrice().isBlank() ? "暂无报价" : view.totalPrice()) + " " + MarketMessages.currency(view.currency()),

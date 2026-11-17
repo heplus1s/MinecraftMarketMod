@@ -467,7 +467,7 @@ public final class MarketDesk {
             return MarketMessages.line("已购买挂牌 " + listing.shortId() + "。", itemName(listing),
                     " × " + listing.count() + "，合计 " + money(amount, listing.currency()) + "。" + pay + tail);
         }
-        String shape = listing.kind() == ListingKind.PARCEL ? "整块宗地「" + MarketMessages.parcelName(listing.parcelName()) + "」" : listing.count() + " 个区块";
+        String shape = listing.kind() == ListingKind.PARCEL ? "整块宗地「" + MarketMessages.parcelName(currentParcelName(listing)) + "」" : listing.count() + " 个区块";
         return MarketMessages.line("已购买挂牌 " + listing.shortId() + "。" + shape + "，合计 "
                 + money(amount, listing.currency()) + "。" + pay);
     }
@@ -480,9 +480,22 @@ public final class MarketDesk {
                     : "每件 " + money(listing.unitPrice(), listing.currency()) + "，合计 " + money(listing.customTotal(), listing.currency());
             return MarketMessages.line("挂牌 " + listing.shortId() + "：", itemName(listing), " × " + listing.count() + "，" + price + "，" + who + "。");
         }
-        String shape = listing.kind() == ListingKind.PARCEL ? "整块宗地「" + MarketMessages.parcelName(listing.parcelName()) + "」" : "区块 " + listing.count() + " 个";
+        String shape = listing.kind() == ListingKind.PARCEL ? "整块宗地「" + MarketMessages.parcelName(currentParcelName(listing)) + "」" : "区块 " + listing.count() + " 个";
         return MarketMessages.line("挂牌 " + listing.shortId() + "：" + shape + "，" + MarketMessages.dimension(listing.dimension())
                 + "，价格 " + money(listing.unitPrice(), listing.currency()) + "，" + who + "。");
+    }
+
+    private String currentParcelName(Listing listing) {
+        String parcelName = listing.parcelName();
+        if (listing.parcelId() != null) {
+            try {
+                LandView current = LandBridge.parcel(server, listing.parcelId());
+                if (current != null) parcelName = current.name();
+            } catch (RuntimeException | LinkageError unavailable) {
+                // Display can fall back to its snapshot; checkout still verifies live ownership.
+            }
+        }
+        return parcelName;
     }
 
     public ListingView view(Listing listing, BigInteger shopUnit) {
@@ -497,10 +510,11 @@ public final class MarketDesk {
         for (ChunkRef chunk : listing.chunks()) {
             chunks.add(chunk.position());
         }
+        String parcelName = currentParcelName(listing);
         return new ListingView(listing.id().toString(), listing.shortId(), listing.kind().token(), listing.sellerName(),
                 listing.seller().toString(), listing.proceeds() == Proceeds.LAND_GRANT, listing.priceMode() == PriceMode.SHOP,
                 unit, total, listing.currency(), listing.count(), listing.itemId(), listing.dimension(),
-                listing.parcelId() == null ? "" : listing.parcelId().toString(), listing.parcelName(), chunks);
+                listing.parcelId() == null ? "" : listing.parcelId().toString(), parcelName, chunks);
     }
 
     private static BigInteger shopUnit(Listing listing) {

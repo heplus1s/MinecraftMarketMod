@@ -195,11 +195,11 @@ public final class MarketCommands {
     private static int personalReply(CommandContext<ServerCommandSource> context, SettlementResult result) {
         String message = result.success() ? result.detail() : switch (result.code()) {
             case "offer_empty" -> "没有足够数量的单笔挂单。";
-            case "offer_minimum" -> "订单低于 0.0001 银行券，请提高买入数量。";
+            case "offer_minimum" -> "订单低于 0.0001 " + MarketMessages.currency("note") + "，请提高买入数量。";
             case "offer_price_moved" -> "应付金额超过你的最高总价，请重新询价。";
-            case "funds" -> "持有数量或银行券余额不足。";
-            case "par" -> "数量或银行券金额无效，最高总价最多四位小数。";
-            case "market" -> "银行券当前无法报价。";
+            case "funds" -> "持有数量或" + MarketMessages.currency("note") + "余额不足。";
+            case "par" -> "数量或" + MarketMessages.currency("note") + "金额无效，最高总价最多四位小数。";
+            case "market" -> MarketMessages.currency("note") + "当前无法报价。";
             case "none", "bankrupt" -> "这个个人币不存在或已停止交易。";
             case "bank_missing", "bank_not_ready", "personal_market_missing" -> "个人币市场需要已加载的新版银行模组。";
             default -> "银行未能完成这笔操作。";
