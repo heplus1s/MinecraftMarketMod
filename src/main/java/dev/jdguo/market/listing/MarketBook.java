@@ -429,6 +429,7 @@ public final class MarketBook {
         tag.putString("Kind", listing == null ? "" : listing.kind().token());
         tag.putString("ItemId", listing == null ? "" : listing.itemId());
         tag.putInt("Count", listing == null ? 0 : listing.count());
+        tag.putString("VariantKey", listing == null ? "unknown" : ItemVariants.key(listing.item()));
         tag.putLong("At", System.currentTimeMillis());
         tag.putBoolean("IndependentPrice", listing != null && listing.kind() == ListingKind.ITEM
                 && listing.priceMode() == PriceMode.CUSTOM && listing.item().getCompound("tag").isEmpty());

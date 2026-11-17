@@ -33,8 +33,11 @@ public final class MarketSync {
     public static final Identifier HELLO = new Identifier("marketmod", "hello");
     public static final Identifier ACTION = new Identifier("marketmod", "action");
     public static final Identifier SYNC = new Identifier("marketmod", "sync");
+    public static final Identifier CATALOG = new Identifier("marketmod", "catalog");
     public static final Identifier RESULT = new Identifier("marketmod", "result");
 
+    private static long catalogSequence;
+    private static final java.util.Map<UUID, Long> CATALOG_REQUESTS = new java.util.HashMap<>();
     private static final Set<UUID> LISTENING = ConcurrentHashMap.newKeySet();
 
     private MarketSync() {
@@ -66,13 +69,16 @@ public final class MarketSync {
             }
             server.execute(() -> act(player, action));
         });
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> LISTENING.remove(handler.player.getUuid()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            LISTENING.remove(handler.player.getUuid()); CATALOG_REQUESTS.remove(handler.player.getUuid());
+        });
     }
 
     public static boolean open(ServerPlayerEntity player) {
         if (!ServerPlayNetworking.canSend(player, OPEN) || !ServerPlayNetworking.canSend(player, SYNC) || !ServerPlayNetworking.canSend(player, RESULT)) return false;
         LISTENING.add(player.getUuid());
         send(player, OPEN, snapshot(MarketDesk.get(player.getServer())));
+        catalog(player, dev.jdguo.market.config.MarketConfig.get().currency());
         return true;
     }
 
@@ -109,6 +115,9 @@ public final class MarketSync {
             return;
         }
         MarketDesk desk = MarketDesk.get(player.getServer());
+        if ("catalog".equals(parts[0]) && parts.length == 2) {
+            catalog(player, parts[1]); return;
+        }
         MarketReply reply = switch (parts[0]) {
             case "buy" -> buy(desk, player, parts);
             case "cancel" -> parts.length >= 2 ? desk.cancel(player, parts[1], player.hasPermissionLevel(2)) : unknown();
@@ -280,6 +289,15 @@ public final class MarketSync {
             one.addProperty("itemId", view.itemId());
             one.addProperty("itemName", listing.kind() == dev.jdguo.market.listing.ListingKind.ITEM
                     ? dev.jdguo.market.world.ItemDelivery.read(listing.item()).getName().getString() : view.parcelName());
+            one.addProperty("translationKey", listing.kind() == dev.jdguo.market.listing.ListingKind.ITEM
+                    ? dev.jdguo.market.world.ItemDelivery.read(listing.item()).getTranslationKey() : "");
+            String variant = dev.jdguo.market.listing.ItemVariants.key(listing.item());
+            one.addProperty("variantKey", variant);
+            one.addProperty("hasVariant", !"default".equals(variant));
+            var stack = dev.jdguo.market.world.ItemDelivery.read(listing.item());
+            one.addProperty("damage", stack.getDamage());
+            one.addProperty("maxDamage", stack.getMaxDamage());
+            one.addProperty("enchanted", stack.hasEnchantments());
             one.addProperty("shopPercent", listing.shopPercent());
             one.addProperty("currencyLabel", dev.jdguo.market.message.MarketMessages.currency(view.currency()));
             var shopBid = dev.jdguo.market.integrate.ShopPrices.exactQuote(listing.itemId(), listing.currency(), false);
@@ -305,11 +323,37 @@ public final class MarketSync {
             if (trade.getString("ItemId").isBlank() || trade.getInt("Count") <= 0) continue;
             JsonObject t = new JsonObject();
             t.addProperty("itemId", trade.getString("ItemId")); t.addProperty("currency", trade.getString("Currency"));
+            t.addProperty("variantKey", trade.contains("VariantKey") ? trade.getString("VariantKey") : "unknown");
             t.addProperty("count", trade.getInt("Count")); t.addProperty("amount", trade.getString("Amount")); t.addProperty("at", trade.getLong("At"));
             trades.add(t);
         }
         root.add("trades", trades);
         return root.toString();
+    }
+
+    private static void catalog(ServerPlayerEntity player, String rawCurrency) {
+        if (!ServerPlayNetworking.canSend(player, CATALOG)) return;
+        String currency = dev.jdguo.market.integrate.MarketCurrencies.resolve(rawCurrency);
+        if (currency == null) return;
+        long now = System.currentTimeMillis();
+        // Per-player bound limits registry/quote work. Initial open is also throttled.
+        Long previous = CATALOG_REQUESTS.get(player.getUuid());
+        if (previous != null && now - previous < 250) return;
+        CATALOG_REQUESTS.put(player.getUuid(), now);
+        var entries = MarketCatalog.entries(currency);
+        int pages = Math.max(1, (entries.size() + 63) / 64);
+        long requestId = ++catalogSequence;
+        for (int page = 0; page < pages; page++) {
+            JsonObject packet = new JsonObject();
+            packet.addProperty("requestId", requestId);
+            packet.addProperty("currency", currency);
+            packet.addProperty("page", page);
+            packet.addProperty("pages", pages);
+            JsonArray items = new JsonArray();
+            for (int i = page * 64; i < Math.min(entries.size(), (page + 1) * 64); i++) items.add(entries.get(i));
+            packet.add("items", items);
+            send(player, CATALOG, packet.toString());
+        }
     }
 
     private static void send(ServerPlayerEntity player, Identifier channel, String json) {
