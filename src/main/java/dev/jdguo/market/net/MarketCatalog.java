@@ -24,7 +24,8 @@ public final class MarketCatalog {
             row.addProperty("itemId", id.toString());
             row.addProperty("itemName", item.getName().getString());
             row.addProperty("translationKey", item.getTranslationKey());
-            row.addProperty("category", category(item));
+            String shopCategory = ShopPrices.categoryId(id.toString());
+            row.addProperty("category", shopCategory.isBlank() ? category(item) : shopCategory);
             row.addProperty("variantKey", "default");
             row.addProperty("referenceCurrency", currency);
             var bid = ShopPrices.exactQuote(id.toString(), currency, false);

@@ -8,7 +8,8 @@ import net.minecraft.world.PersistentState;
 /** Separate world setting: enabling first sales never reprices existing player listings. */
 public final class InitialLandSettings extends PersistentState {
     public boolean enabled;
-    public BigInteger price = BigInteger.ONE;
+    public static final BigInteger DEFAULT_PRICE = BigInteger.valueOf(32);
+    public BigInteger price = DEFAULT_PRICE;
     public String currency = "note";
     public long revision;
     public static InitialLandSettings get(MinecraftServer server) {
@@ -22,7 +23,7 @@ public final class InitialLandSettings extends PersistentState {
             s.currency = tag.getString("Currency");
             s.enabled = tag.getBoolean("Enabled");
             s.revision = tag.getLong("Revision");
-        } catch (RuntimeException invalid) { s.enabled = false; s.price = BigInteger.ONE; }
+        } catch (RuntimeException invalid) { s.enabled = false; s.price = DEFAULT_PRICE; }
         return s;
     }
     @Override public NbtCompound writeNbt(NbtCompound tag) {

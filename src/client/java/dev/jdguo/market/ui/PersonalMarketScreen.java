@@ -35,7 +35,7 @@ public final class PersonalMarketScreen extends Screen {
         else if("quote".equals(text(response,"kind"))){
             if(!response.has("tender")&&!data.has("paymentProtocol"))response.addProperty("tender","note");
             if(Boolean.parseBoolean(text(response,"ok"))&&selected.equals(text(response,"id"))&&quantity.equals(text(response,"quantity"))&&tender.equals(text(response,"tender"))){quote=response;token=text(response,"token");maximum=text(response,"maximum");notice="买入「"+text(response,"name")+"」×"+quantity+"，支付 "+paid()+" "+tenderName()+"。报价 30 秒内有效。";}
-            else{token="";notice="无法报价："+reason(text(response,"code"));}
+            else{token="";notice="无法报价："+(text(response,"details").isBlank()?reason(text(response,"code")):text(response,"details"));}
         }else if(response.has("completed")){token="";notice=text(response,"message");MarketUiClient.action("notes");}
         rebuild();
     }
@@ -43,7 +43,7 @@ public final class PersonalMarketScreen extends Screen {
         case "funds" -> "所选付款币种的银行余额不足。";
         case "custody_funds" -> "银行实物保管余额不足，未扣款。";
         case "insufficient_treasury" -> "央行自有央行券不足以结算或找零，未扣款。";
-        case "inexact_tender" -> "当前实物价格无法精确结算，请换用央行券。";
+        case "inexact_tender" -> "当前金额无法在支持的精度内精确结算，请调整数量或付款币种；未扣款。";
         case "unknown_tender" -> "银行版本不支持此付款币种。";
         case "empty" -> "没有足够的可购买卖单。";
         case "self" -> "不能购买自己的卖单。";
@@ -94,11 +94,12 @@ public final class PersonalMarketScreen extends Screen {
             lines.add(tenderName()+" → "+text(selected(),"name")+"，买入数量 "+quantity);
             if(!quote.entrySet().isEmpty()){
                 lines.add("实际扣款："+paid()+" "+tenderName());lines.add("成交汇率："+displayRate());
-                lines.add("成交价款："+maximum+" "+central());lines.add("央行券找零："+text(quote,"change"));
+                lines.add("卖方结算金额："+maximum+" "+central());
+                if(PaymentDisplay.positive(text(quote,"change")))lines.add("实退零钱："+text(quote,"change")+" "+central());
                 lines.add("兑换费："+(text(quote,"fee").isBlank()?"以服务端结算为准":text(quote,"fee")));
                 if(!text(quote,"details").isBlank())lines.add(text(quote,"details"));
             }
-            lines.add("实物付款只扣个人银行储蓄中的整数实物，差额退央行券。个人币付款会回收付款币、扣缴其准备金，再由真实央行券买入目标币。两段一起成功或一起失败，不需要手动兑换两次。");
+            lines.add("实物付款只扣个人银行储蓄中的整数实物，差额退央行券。个人币付款按小数扣款，剩余个人币余额保留原币种；付款部分回收并扣缴准备金，再由真实央行券买入目标币。两段一起成功或一起失败，不需要手动兑换两次。");
             lines.add("卖方收到央行券；买入已发行的币仅转移持有人，不给买入币增加准备金。报价有效期为 30 秒，过期或价格变化须重新询价。");
             if(client!=null)client.setScreen(new PersonalPaymentDetailsScreen(this,lines));
         }).active=!pending;
@@ -123,7 +124,7 @@ public final class PersonalMarketScreen extends Screen {
         line(c,"我的挂单: "+text(r,"offered"),b.x()+6,b.y()+56,b.width()-12,0xff99abbc);
         line(c,"不合并多个卖家",b.x()+6,b.y()+71,b.width()-12,0xff99abbc);
         var o=layout.order();panel(c,o,"买入 · "+central()+"余额 "+text(data,"balance"));line(c,"数量",o.x()+6,o.y()+29,50,0xffdde8f2);
-        line(c,pending?"等待服务器结果，请勿重复提交。":token.isBlank()?"实物仅扣银行储蓄整件；差额退央行券。":"找零 "+text(quote,"change")+" "+central()+" · 余额 "+text(quote,"balance")+" "+tenderName(),o.x()+6,o.y()+98,o.width()-12,0xff99abbc);
+        line(c,pending?"等待服务器结果，请勿重复提交。":token.isBlank()?(tender.startsWith("personal:")?"个人币支持小数付款，余额保留原币种。":"实物仅扣银行储蓄整件；必要差额退央行券。"):(PaymentDisplay.positive(text(quote,"change"))?"找零 "+text(quote,"change")+" "+central()+" · ":"")+"余额 "+text(quote,"balance")+" "+tenderName(),o.x()+6,o.y()+98,o.width()-12,0xff99abbc);
         line(c,token.isBlank()?"统一结算给卖家央行券，不改变买入币准备金。":"成交汇率: "+displayRate()+" · 兑换费: "+(text(quote,"fee").isBlank()?"待确认":text(quote,"fee")),o.x()+6,o.y()+113,o.width()-12,0xff99abbc);
         line(c,notice,8,height-15,width-16,0xffffc66d);
         super.render(c,mx,my,delta);
