@@ -27,8 +27,10 @@ class MarketLayoutTest {
    int rows=Math.max(1,(list.height()-105)/24);
    assertTrue(72+(rows-1)*24+18<=list.height()-24);
    assertTrue(71+9<=l.details().height());assertTrue(71+9<=l.book().height());
-   assertTrue(24+18<57);assertTrue(57+18<82);assertTrue(82+18<110);assertTrue(110+9<order.height());
-   assertTrue(order.width()-70>=80);
+   assertTrue(24+18<48);assertTrue(48+18<72);assertTrue(72+18<98);assertTrue(98+9<113);assertTrue(113+9<order.height());
+   assertTrue(order.width()-122>=80);
+   assertTrue(60+(order.width()-122)<order.width()-52,"quantity and cancel do not overlap");
+   int half=(order.width()-18)/2;assertTrue(6+half<12+half);assertTrue(12+half+half<=order.width()-6);
   }
  }
  @Test void tooSmallViewportsRequestLowerGuiScaleInsteadOfHidingSections(){assertFalse(MarketLayout.supported(427,240));assertFalse(MarketLayout.supported(640,240));assertTrue(MarketLayout.supported(640,360));}
