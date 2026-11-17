@@ -26,6 +26,7 @@ public final class LandUiChannel {
             final String json;
             try { json = buf.readString(4096); } catch (RuntimeException bad) { return; }
             server.execute(() -> {
+                if (server.getPlayerManager().getPlayer(player.getUuid()) != player || player.networkHandler != handler) return;
                 try {
                     JsonObject input = JsonParser.parseString(json).getAsJsonObject();
                     Pending p = pending.get(player.getUuid());

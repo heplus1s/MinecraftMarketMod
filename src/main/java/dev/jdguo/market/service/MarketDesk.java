@@ -290,7 +290,7 @@ public final class MarketDesk {
             return fail("reserved");
         }
         boolean owner = listing.seller().equals(player.getUuid());
-        if (!owner && !admin) {
+        if (!dev.jdguo.market.service.MarketAccessPolicy.canCancel(owner, admin, player.hasPermissionLevel(2))) {
             return fail("not_seller");
         }
         if (listing.kind() == ListingKind.ITEM) {
