@@ -1,219 +1,284 @@
 # MinecraftMarketMod
 
-Fabric 1.20.1 市场模组：玩家挂牌交易物品和领地。挂牌可以参考商店当时的浮动价格，也允许自定义价格。玩家之间成交后，货款给卖方，不进央行。
+面向 **Minecraft Java 1.20.1 / Fabric** 的商品、个人币和土地交易市场。本文对应 **v1.0.10**。
 
-A Fabric 1.20.1 marketplace for player listings of items and land. Listings can use the shop floating price as a reference, and custom prices are allowed. Player-to-player settlement goes to the seller, not the central bank.
+市场提供行情目录、玩家挂牌、托管与交付，以及银行、商店、领地的联动入口。它不是无限资金的系统买家，也不是自动连续撮合的证券交易所：**目录不等于库存，参考价不等于已成交价格，个人币不等于股票。**
 
-物品挂牌一次买下一整笔。领地可以卖整块宗地，也可以从宗地里拆出若干原版 16×16 区块。不能卖比区块更小的一块方块。银行券的交易市场仍在银行模组里，这里不重复做。
+- [发布与下载](https://github.com/heplus1s/MinecraftMarketMod/releases)
+- 配套项目：[银行](https://github.com/heplus1s/MinecraftBankMod)、[商店](https://github.com/heplus1s/MinecraftShopMod)、[领地](https://github.com/heplus1s/MinecraftLandMod)
+- 许可证：MIT，作者 heplus1s。
 
-Item listings are bought in full. Land can be a whole parcel, or some vanilla 16 by 16 chunks split out of a parcel. Nothing smaller than a chunk is sold. Bank-note trading stays in the bank mod.
+## 1. 安装、升级与兼容
 
-提供指令及 `/market ui` 原版箱子交易终端。可选客户端交易界面已内置于本主模组。不装界面包也可以进服并使用核心交易功能。
+运行环境：Minecraft `1.20.1`、Java `17+`、Fabric Loader `0.15.0+`、Fabric API。当前构建使用 Loader 0.16.9、Fabric API 0.92.2+1.20.1。
 
-Commands and a vanilla chest trading terminal are available. Optional client UI is embedded in the core jar. Vanilla clients can join a dedicated server and use core trading features.
+1. 将 `marketmod-1.0.10.jar` 放入服务端 `mods`。要使用完整经济体系，同时安装配套银行、商店、领地。
+2. 客户端可以不安装本模组，通过原版命令、箱子交易终端使用核心功能；安装同一个主模组 JAR 和其依赖可启用图形交易界面。
+3. 升级前停服并整体备份世界、银行数据及配置。删除旧版同名模组，不要留下两个版本。
+4. 删除旧独立 `marketmod-ui` JAR。主模组已内置客户端界面，同时安装会由 Loader 拒绝，防止重复注册。
 
-许可证为 MIT，版权归 heplus1s。
+银行、商店、领地在模组元数据中是可选依赖，因此缺少它们不会仅因依赖声明而阻止市场加载；**不等于所有交易仍可完成**：
 
-## 指令
+| 配套模块 | 负责什么 | 未安装或接口不兼容时 |
+| --- | --- | --- |
+| 银行 | 真实余额、玩家货款转账、个人币挂单与结算、土地系统账户 | 成交拒绝，不伪造余额；个人币市场不可用 |
+| 商店 | 商品分类、实时参考价、系统买卖报价和执行 | 自定义玩家挂牌可保留；商店联动报价/系统成交不可用 |
+| 领地 | 所有权、权限、区块拆分与过户 | 物品市场不受影响，土地成交不可用 |
 
-聊天前缀是 `[市场]`。指令本身是英文。下面的说明是中文。
+只有客户端安装市场，不能给未安装服务端市场的服务器增加交易能力。服务端检查客户端声明的可选网络通道；不支持增强界面时保留基础入口。其他服务器模组若要求客户端安装，仍需遵守它们的要求。
 
-The chat prefix is `[市场]`. The commands are English.
+## 2. 交易类型与资金去向
 
-| 指令 | 作用 |
+| 交易 | 库存或权属来源 | 货款去向 |
+| --- | --- | --- |
+| 玩家商品挂牌 | 卖家真实背包物品，挂牌后托管 | 卖家银行储蓄，不进央行经营资金 |
+| 系统商店买卖 | 调用商店接口，由商店执行物品与资金变更 | 商店系统账户；与玩家挂牌不同 |
+| 个人币交易 | 银行中的真实卖单/发行者自动待售库存 | 银行执行，卖家按银行结算规则收款 |
+| 玩家二手土地 | 卖家持有且合法挂牌的宗地或区块 | 卖家银行储蓄 |
+| 系统土地出让 | 管理员出让或已启用的无主地块初售 | 银行土地系统账户，不给管理员个人 |
+
+市场通过银行公开接口结算，不直接修改银行内部存档。商店系统账户和土地系统账户相互独立，央行给它们拨款属于银行管理功能。
+
+## 3. 快速开始
+
+### 图形界面与原版入口
+
+```text
+/market ui
+```
+
+该服务端入口会优先打开兼容客户端的增强界面；没有相关客户端通道时打开原版箱子终端。增强界面分商品、领地、个人币等模式，提供分类、搜索、价格和订单操作。安装了本模组客户端还可使用：
+
+```text
+/marketui
+/marketnoteui
+```
+
+后两条是客户端命令，不是原版客户端通用命令。箱子界面保留核心浏览、挂牌、购买和撤销功能，不代表拥有增强界面的全部显示和付款选择。
+
+### 玩家挂牌示例
+
+手持想出售的物品：
+
+```text
+/market offer note 2 64
+/market search mine
+/market info <编号>
+/market cancel <编号>
+```
+
+示例表示用央行券计价、每件 2 券、挂出 64 件，而非整单 2 券。货币显示名称可以由银行管理员更改，`note` 是稳定的内部标识。指定货币也支持银行中能够唯一识别的显示名称；含空格的命令参数用双引号包裹，重名时使用 ID。
+
+购买前核对实际物品、变体、数量、币种和总额，不要只看目录中的参考价。
+
+## 4. 商品挂牌、部分成交与托管
+
+### 挂牌
+
+- 固定单价为正整数；也可使用商店联动价。
+- 从主手物品确定品种与 NBT，数量可从背包中相同、可合并的物品堆累计，最多 **2304 件/挂牌**，不得超过真实持有量。
+- 不写数量时默认主手这一组的数量。
+- 挂牌先保存不可购买的托管意图，再处理背包扣物与正式开放，避免把未知中断结果直接当成可出售库存。
+- 耐久、附魔、自定义数据等属于物品变体。不同变体不应视为同一标准品，挂牌和交付保留原物品数据。
+
+### 成交
+
+增强商品界面支持输入购买数量，**一张商品卖单可以部分成交**。服务器先拆分本次托管数量，再按本次数量结算；剩余库存继续留在原单。未知结果会锁定相关托管，不能再次售出。
+
+`/market buy <id>` 仍购买整笔挂牌，不带部分数量参数。土地挂牌不按任意方块数量拆买，购买的是卖方已经确定的整个挂牌范围。
+
+每次交易重新验证卖单状态、实际数量与价格；不能购买自己的卖单。图形确认使用最高总价约束，价格上涨超过确认值就拒绝，需重新确认。
+
+### 币种与精度
+
+玩家商品单可以选择银行登记货币，包括有可用接口的个人币。每单保存自己的币种，后续修改市场默认币种不会改写旧单。**普通商品单采用正整数单价和整数总额，按卖方币种原币转账，不自动换汇**；这与个人币交易页面的小数结算不是一条路径。
+
+铜锭、钻石作为付款币时，使用银行同币种余额，不直接从背包现场扣实物。央行券也从银行储蓄扣除。
+
+### 撤单、收货与异常
+
+撤单仅适用于可撤销的开放挂牌。卖家可撤自己的，OP 可撤别人的；撤销物品先转入卖家的待领记录，再交付，离线卖家不会直接丢失物品。登录时会尝试交付待领物品。
+
+交易不是跨多个模组文件的一次数据库事务，而是持久化记录加分阶段结算/恢复。遇到锁定或未知结果，不要直接清锁、复制物品或重复补款。OP 可用 `/market audit` 查看锁定交易、银行引用和待交付锁，并结合银行记录核对。
+
+## 5. 行情目录及商店联动
+
+### 没有挂牌也能看到参考行情
+
+目录来自服务端物品注册表，排除部分管理专用物品；工具、武器、装饰等不局限于基础建材。商店有分类时使用商店分类，否则按物品类型分类。**目录出现某物品并不保证系统商店收购它、有参考价，或有玩家卖单**。其他模组物品的可见性也不代表原版客户端能识别它们。
+
+系统买价/卖价由商店提供，没有可靠报价时显示缺价，不制造虚假订单、成交量或价格。
+
+### 两条不同的联动路径
+
+1. **玩家联动挂牌**：按商店当前参考单价定价。增强界面可设 **1–1000%** 的比例，成交时重新读取参考价并计算，普通挂牌金额按整数规则向上取整。缺少报价时保留挂牌但拒绝成交。
+2. **系统商店订单**：行情界面调用商店的报价和成交接口，真实的库存检查、账户预算、逐件供需调价、物品交付由商店执行。报价确认令牌绑定玩家、方向、商品、数量和总价，30 秒有效且一次使用。数量仍受商店配置的单笔上限约束，不因从市场进入而绕过。
+
+商店的逐件调价会影响市场中的商店参考报价；玩家的独立真实成交也能反向提供商店参考数据。市场参考采样要求同物品同币种、最近 24 小时、总量至少 16 件、至少 3 组不同买卖双方，取数量加权中位价；商店如何采用和限制该参考由商店配置决定。联动价成交不作为独立定价样本，避免单纯追随自己产生反馈。
+
+这是允许供需价格变化的经济设计，不承诺消除加工套利或永远维持商店资金充足。市场没有无限兜底预算。
+
+## 6. 个人币市场
+
+个人币由银行创建和管理；市场提供浏览和交易入口。币种按稳定 UUID 关联，显示名称随银行配置读取，不通过名称复制出新币种。
+
+- 新生成的币种会关联目录；无卖盘、暂停或缺价时仍可显示，不伪造可买数量。
+- 发行者自动待售开关、实际待售库存与普通持币人的卖单由银行保存，卖方离线可成交。
+- 当前增强个人币购买输入为整数数量；银行账面和部分系统付款路径支持小数，并不代表此输入框支持任意小数买入。
+- 一次买入由一个可足额交割的卖家供给，**不会把多个卖家的不足卖单自动拼接**，也不能买自己的单。
+- 报价后再确认，令牌 30 秒有效、单次消费；确认时银行重新检查库存、余额、报价和币种状态。
+
+配套银行接口可用时，增强界面可用央行券、铜/钻储蓄或其他个人币付款。用户看到的是所选付款币到目标币的报价，底层由银行完成实际结算：
+
+- 铜、钻按整数实物余额扣款，可能产生央行券找零。
+- 个人币之间兑换不自动用央行券补差；若现有四位精度、准备金或流动性不能完成精确结算，整笔拒绝并说明原因，不凭空补币。
+- 个人币实际准备金的扣缴、递归抵押与卖家收款由银行负责，市场不另维护一份币值或准备金账。
+
+命令入口保留传统央行券报价/付款模式：
+
+```text
+/market note search
+/market note view "币名"
+/market note list "币名" 64
+/market note cancel "币名"
+/market note quote "币名" 64
+/market note buy "币名" 64 最高央行券总价
+```
+
+`list/quote/buy` 的数量是正整数；最高总价支持最多四位小数。货币发行、准备金调整、改名、通兑和直接转账请使用银行功能。
+
+## 7. 土地交易
+
+### 玩家二手土地
+
+可以挂牌整宗地、脚下一个区块或宗地中矩形范围的区块。每区块为 **16×16 格整列**，不能出售更小的单格；交易按整张土地单的总价，不是每区块单价。
+
+买方按卖方指定币种付款，不自动跨币兑换。过户调用领地的 `transferParcel/transferChunks`，由领地处理所有权和拆分，市场不直接修改领地存档。
+
+挂牌期间，宗地的赠送、放弃、合并、扩展等会受挂牌锁限制；撤销或完成成交后解除。抵押收回等特殊接口仍由领地/银行规则处理，不能用市场锁绕过。
+
+### 系统出让与无主地块初售
+
+- 管理员可把自己持有的土地按系统出让挂牌，收入给土地系统账户，不给管理员个人。
+- 无主地块初售有独立世界设置，**默认未启用**，须管理员启用。
+- 新设置默认 **32 央行券/区块**，总价按所选区块数计算。
+- 旧世界保留原价格和币种，不自动把旧的 1 改成 32。配套领地管理界面可填入建议价格，确认保存才生效。
+- 管理设置改变会增加报价修订号，使未付款的旧预览失效；不追溯修改已付款订单、已购地块或二手挂牌。
+
+新版银行接口和增强土地确认页支持标价币种与买方付款币种分离。铜/钻付款只用整数余额，不能覆盖的尾差可由央行券补齐；个人币不强制补央行券，精度无法结算则拒绝。旧接口或原版箱子按其支持的原币付款方式处理，不能假定与增强页完全相同。
+
+付款完成后，银行结算锁直到领地交付确认才释放。失败按原付款记录恢复/退款，不按之后的新汇率重新计算；未完成土地订单每 100 个服务器 tick 尝试恢复。银行、市场、领地数据应整体备份和恢复。
+
+## 8. 指令速查
+
+普通玩家指令：
+
+| 指令 | 说明 |
 | --- | --- |
-| `/market` | 显示英文用法 |
-| `/market list <price> [count]` | 把手上的物品按自定义价格挂出。价格是每一件的价格。不写数量就挂出手上这一整组 |
-| `/market list shop [count]` | 同样挂出手上的物品，价格用商店当时的参考价格，购买时再读一次 |
-| `/market buy <id>` | 买下整笔挂牌。物品和领地都用这一条 |
-| `/market cancel <id>` | 卖方撤销自己的挂牌。管理员可以撤销别人的 |
-| `/market search [page]` | 查看正在出售的挂牌 |
-| `/market search item <item> [page]` | 按物品查找。可以写 `diamond`，也可以写带引号的 `"minecraft:diamond"` |
-| `/market search player <name> [page]` | 按卖方名字查找 |
-| `/market search land [page]` | 只看领地 |
-| `/market search mine [page]` | 只看自己的挂牌 |
-| `/market info <id>` | 查看一块挂牌的编号、价格和位置 |
-| `/market price` | 查看手上物品的商店参考价格 |
-| `/market reload` | 管理员重新读取配置。已经挂出的价格不变 |
-| `/market land list parcel <price>` | 把脚下整块宗地挂出。这是整笔价格，不是每个区块的价格 |
-| `/market land list chunk <price>` | 把脚下这一个区块挂出。如果宗地不止一块，成交时会把这一块拆出去 |
-| `/market land list chunks <price> <x1> <z1> <x2> <z2>` | 挂出一个矩形里的区块。`x` 和 `z` 是区块坐标，不是方块坐标。负数向下取整，方块 -1 属于区块 -1 |
-| `/market land server parcel <price>` | 管理员把脚下整块宗地作为服务器出让挂出 |
-| `/market land server chunk <price>` | 管理员把脚下这一个区块作为服务器出让挂出 |
-| `/market land server chunks <price> <x1> <z1> <x2> <z2>` | 管理员把矩形里的区块作为服务器出让挂出 |
-| `/market land search [page]` | 只看领地挂牌 |
+| `/market ui` | 自动选择增强 UI 或原版箱子终端 |
+| `/market list <price> [count]` | 主手物品固定整数单价，使用配置默认币种 |
+| `/market list shop [count]` | 主手物品商店参考价挂牌，默认 100% |
+| `/market offer <currency> <price或shop> [count]` | 明确选择币种挂牌 |
+| `/market buy <id>` | 整单购买；增强商品页另支持部分购买 |
+| `/market cancel <id>` | 撤自己的开放挂牌 |
+| `/market search [page]` | 分页浏览 |
+| `/market search item <item> [page]` | 物品过滤，如 `"minecraft:diamond"` |
+| `/market search player <name> [page]` | 按卖家过滤 |
+| `/market search land [page]`、`/market search mine [page]` | 土地或自己的单 |
+| `/market info <id>` | 挂牌详情 |
+| `/market price` | 主手物品参考价 |
+| `/market land list parcel <price>` | 整宗地，总价 |
+| `/market land list chunk <price>` | 脚下一个区块，总价 |
+| `/market land list chunks <price> <x1> <z1> <x2> <z2>` | 指定矩形区块范围，总价 |
+| `/market land search [page]` | 土地挂牌 |
 
-编号可以写前 8 位，也可以写完整编号。一次只能买下一整笔挂牌。
+编号可用完整 UUID 或能唯一定位的短编号，歧义时使用完整编号。土地矩形参数是**区块坐标**，不是方块坐标；例如方块 X=-1 属于区块 X=-1。
 
-An id can be the first 8 characters or the full id. Each listing is purchased in full.
+OP（权限等级 2）还可：
 
-## 谁收到货款
+- `/market reload`：重读 `marketmod.json`，不改写已有单的固定币种/价格。
+- `/market audit`：只读核对锁定记录，不强制清理或补款。
+- `/market cancel <id>`：撤他人的可撤销单。
+- `/market land server parcel <price>`、`chunk <price>`、`chunks <price> <x1> <z1> <x2> <z2>`：系统出让挂牌。
 
-玩家卖给玩家时，货款从买方的储蓄账户划到卖方的储蓄账户。中央银行不留下这笔钱。发行准备金和商店经营账户也不动。
+## 9. 实体市场柜台
 
-When one player buys from another, the price moves from the buyer's savings to the seller's savings. The central bank does not keep it. Issuance reserves and the shop operating account stay where they are.
+OP 准星对准五格内实心底座，底座上方两格留空：
 
-服务器出让土地时，货款进入土地出让账户。它是储蓄总池里的一个分户，和普通储蓄一样计算利息。它不是商店经营账户，不是发行准备金，也不是另开的第三个池子。只有服务器卖地，以及以后处理收回来的土地，才把钱放进这个账户。玩家之间的土地买卖仍然是双方储蓄之间的划转。
-
-When the server sells land, the price goes to the land-grant account. That account is one savings sub-account inside the main savings pool, and it earns interest the same way personal savings do. It is not the shop operating account, not issuance reserves, and not a separate third pool. Only server land sales, and later disposal of recovered land, credit it. Ordinary land trades between players remain a private savings transfer.
-
-挂牌时，管理员必须自己持有这块地。成交后地交给买方，钱不进入管理员个人的储蓄账户。
-
-The operator who lists server land must hold that land. After the sale the buyer receives the land, and the operator's personal savings are not credited.
-
-## 商店参考价格
-
-商店模组如果提供了当前价格，`/market list shop` 和 `/market price` 会读取它。购买按商店参考价格挂出的物品时，用的是成交那一刻的价格，不是挂牌那一刻的价格。
-
-If the shop mod provides a live price, `/market list shop` and `/market price` read it. A shop-priced listing is charged at the price at the moment of purchase.
-
-商店还没有做好，或者这件物品没有参考价格时，自定义价格照常可用。这时不能用商店参考价格成交，已经挂出的这块会保留，并提示你改用自定义价格。
-
-While the shop is absent, or an item has no reference price, custom prices still work. A shop-priced listing is kept and the purchase is refused until a price exists.
-
-商店可以在启动时调用 `dev.jdguo.market.api.ShopPriceApi.install`，也可以提供静态方法 `dev.jdguo.shop.api.ShopPrices.priceEach(物品编号, 币种)`。币种用银行里的编号，默认是 `note`（银行券）。结算币种是钻石时，如果银行里已经安装了钻石报价，市场也会拿来当作参考。带小数的报价不用作整数货款。
-
-## 领地怎么过户
-
-市场不自己改领地存档。买下整块宗地时调用领地模组的 `transferParcel`。买下其中若干区块时调用 `transferChunks`，由领地模组把这些区块拆出去再交给买方。传过去的单号是 `sale:` 加上这块市场挂牌的编号，用来和赠送分开。
-
-The market does not edit land saves itself. A whole parcel uses the land mod's `transferParcel`. Selected chunks use `transferChunks`, which splits those chunks off and gives them to the buyer. The reference is `sale:` plus the market listing id, so a purchase can be told apart from a gift.
-
-挂牌期间，这块宗地不能赠送，不能放弃，不能合并，也不能并入新区块。领地模组里那份不付款的出售，也不能把这块地转走。撤销挂牌或在市场买下之后，这些限制解除。贷款收回土地的接口仍然放行，收回后对应的市场挂牌会取消。
-
-While a parcel is listed it cannot be given away, abandoned, merged, or extended. The land mod's unpaid sale cannot transfer it either. Canceling the listing, or buying it here, lifts the lock. Collateral seizure stays allowed, and the market listing is then removed.
-
-领地模组没有加载时，物品挂牌仍然可用。领地挂牌和购买会说明现在不能转让。
-
-Item listings still work when the land mod is absent. Land listings and purchases explain that the transfer cannot be done.
-
-## 银行还缺的接口
-
-现在的银行模组能记储蓄，但还没有「从一个玩家的储蓄划到另一个玩家」的公开接口，也还没有土地出让账户。市场不会去改银行的内部账本。
-
-The bank can record savings, but it does not yet offer a public player-to-player savings transfer, and it does not yet keep the land-grant account. This market does not write the bank's private books.
-
-需要银行增加 `dev.jdguo.bank.api.MarketSettlement`，里面三个静态方法都返回银行现有的 `TxResult`：
-
-- `transfer(买方, 卖方, 币种, 金额, 单号)`：买方储蓄减少，卖方储蓄增加。储蓄总池的总额不变。
-- `creditLandGrant(付款人, 币种, 金额, 单号)`：付款人储蓄减少，土地出让账户增加。这个账户按个人储蓄的利率计息。
-- `refundLandGrant(付款人, 币种, 金额, 单号)`：把上一笔退回付款人。
-
-成交单号是 `sale:` 加挂牌编号。退款单号是 `refund:` 加结算编号。余额不够时返回 `insufficient_funds`，并且不能只扣一部分。返回之前要把账本保存好。
-
-银行也可以直接调用本模组的 `BankSettlement.install` 和 `LandGrantAccount.install`，效果相同。接口还没接上时，相关指令会用中文说明哪一笔结算做不了，已经挂出的物品和领地不会被删掉。
-
-## 以后的箱子界面和客户端界面
-
-箱子界面的稳定入口是 `dev.jdguo.market.ui.MarketChestUiHooks`。以后的界面只要调用这里的浏览、购买、撤销和挂牌方法，不用再写一套成交。`/market ui` 使用原版通用箱子协议打开交易界面，不新增客户端专用 ScreenHandler 类型。
-
-The reserved chest entry is `dev.jdguo.market.ui.MarketChestUiHooks`. A later menu calls those methods and does not perform settlement itself. The built-in terminal opens a vanilla generic chest screen handler.
-
-客户端界面已内置在主模组中。它先向 `marketmod:hello` 报一个版本号，再通过 `marketmod:action` 发送和指令相同的操作。服务端只在客户端声明过频道之后，才从 `marketmod:sync` 和 `marketmod:result` 回传。原版客户端不声明这些频道，所以不会收到它们，进服不受影响。
-
-## 配置和存档
-
-配置文件是 `config/marketmod.json`。
-
-- `currency`：结算币种，默认 `note`，也就是银行券。
-- `maxListingsPerPlayer`：每个玩家同时能挂出的数量，默认 24。
-- `pageSize`：搜索每页条数，默认 6。
-- `maxChunksPerListing`：一次领地挂牌最多多少个区块，默认 64。
-- `serverLandSales`：是否允许服务器出让土地，默认开启。
-
-挂牌、托管中的物品、还没交付的物品和未完成的结算都写在主世界的 `data/marketmod.dat`。以后升级会保留已经认识的内容，不认识的字段也会原样写回，不会清空存档。完成记录只保留最近 2000 笔，避免这份历史无限变大。
-
-Listings, escrowed items, undelivered items, and unfinished payments are stored in the overworld file `data/marketmod.dat`. Upgrades keep data they know and write unknown fields back. The completion history keeps the latest 2000 records.
-
-## 构建
-
-需要 Java 17 或更高版本。
-
+```text
+/market outlet set 市场 总店
+/market outlet list
+/market outlet rotate east 市场 总店
+/market outlet remove 市场 总店
 ```
+
+- 名称支持中文与中间空格，最多 32 字符。同名 `set` 迁移位置并保留朝向。
+- 方向使用 `north/east/south/west`；旧存档缺少方向时保持北向。
+- 旋转持久保存，模型围绕底座中心调整；交互区域仍在底座中心，悬浮招牌居中面向玩家。
+- 右键底座或柜台进入原有交易入口，兼容增强 UI 与箱子回退。
+- 展示使用原版显示/交互实体，不新增客户端必装方块或资源包；不会替换、拆除建筑底座。
+- 只检查已加载区块，不强制加载远处网点。重启和区块重载时重建/清理显示实体。
+- 不同模组的柜台应使用不同位置，避免交互重叠。
+
+## 10. 配置、数据与管理员维护
+
+`config/marketmod.json`：
+
+```json
+{
+  "currency": "note",
+  "maxListingsPerPlayer": 24,
+  "pageSize": 6,
+  "maxChunksPerListing": 64,
+  "serverLandSales": true
+}
+```
+
+| 字段 | 含义与范围 |
+| --- | --- |
+| `currency` | 默认币种 ID，不是显示名称；配置格式为 1–32 位小写字母、数字、下划线 |
+| `maxListingsPerPlayer` | 每玩家同时挂牌上限，1–500，默认 24 |
+| `pageSize` | 聊天搜索每页 1–50 条，默认 6 |
+| `maxChunksPerListing` | 一张土地单区块上限 1–4096，默认 64 |
+| `serverLandSales` | 系统土地出让总开关；无主地初售还须单独启用 |
+
+无效 JSON 使用默认值运行但不覆盖坏文件，应先修复配置再 reload。已有单记录各自币种，配置默认值不是统一换币按钮。
+
+主要世界状态保存在主世界 `data`：
+
+- `marketmod.dat`：挂牌、托管、交易过程、待领物品、完成历史等；完成历史最多保存 2000 笔，未解决交易不因历史上限自动删除。
+- `marketmod_initial_land.dat`：初售开关、每区块价格、币种、修订号，与普通配置分离。
+- `marketmod_outlets.dat`：网点位置、名称、朝向。
+
+不要只回滚其中一个文件，或只恢复市场而不恢复银行/领地。原版背包与多个模组存档不是一份原子数据库；物品交付的极端中断窗口仍需人工核对，不能承诺所有崩溃窗口下绝无重复或丢失。未知交易优先保留锁定并核对，勿直接删除交易日志。
+
+## 11. 当前边界与故障排查
+
+- 玩家物品是卖单托管市场，支持部分成交，但没有完整自动买单撮合、保证金、做空或期货系统。
+- 普通挂牌整数价格、个人币兑换小数报价、系统商店逐件动态价格是不同路径，不能混用精度和上限。
+- 图形挂牌同步最多 256 笔，并有消息长度限制；数据标记截断时不能当作完整订单簿。聊天搜索与箱子分页用于访问更多挂牌。
+- 土地详情同步也有区块展示上限，不等于只买显示的几个区块；以服务器挂牌范围为准。
+- 没参考价：检查商店是否安装、该物品/币种是否支持；固定价玩家挂牌不要求商店报价。
+- 没个人币库存：目录条目不是卖单；检查银行卖方实际库存、自动待售状态和可足额单笔量。
+- 交易精度不足：调整数量或付款币种后重新询价，不自动用央行券填平个人币差额。
+- 点击柜台进入箱子：先检查服务端与客户端版本、是否移除旧 UI 包；箱子是能力不足时的兼容入口，不代表银行余额被清空。
+- 响应超时：先核对余额、物品和交易记录，不盲目重复提交。
+- 报告异常时提供客户端及服务端 `latest.log`、崩溃报告、四个模组版本、操作步骤；不要上传账号令牌等秘密信息。
+
+## 12. 构建与验证
+
+```sh
 ./gradlew build
+# Windows
+.\gradlew.bat build
 ```
 
-可安装的文件在 `build/libs/marketmod-1.0.0.jar`。它不包含银行、领地或商店模组。这三个模组没有安装时，市场本身仍然能加载。
+生成文件：`build/libs/marketmod-1.0.10.jar`，不包含银行、商店或领地。开发入口主要位于：
 
-## 个人币市场
+- `MarketDesk` / `MarketBook` / `Checkout`：挂牌、拆分、托管和交易阶段。
+- `MarketSync` / `PersonalMarketChannel` / `SystemShopChannel`：可选客户端及报价确认。
+- `BankBridge` / `LandBridge` / `ShopPrices`：跨模组公开接口桥接。
+- `LandMarketTerminal` / `InitialLandSettings`：初售报价和管理。
+- `MarketOutlets` / `CounterRotation`：原版实体柜台。
 
-个人币按银行当前牌价挂牌，卖家自行指定上架数量。挂单在银行账本中持久保存，卖家离线时仍可成交。每次买入匹配一笔能足额交割的挂单。报价以银行券为单位，实际成交金额保留至四位小数。
-
-- `/market note search` 浏览当前可买入的个人币。
-- `/market note view <币名>` 查看自己的持有量、挂单数量和可买入的最大单笔数量。
-- `/market note list <币名> <数量>` 设置自己的挂单数量。
-- `/market note cancel <币名>` 撤销自己的挂单。
-- `/market note quote <币名> <数量>` 查询当前应付总额。
-- `/market note buy <币名> <数量> <最高总价>` 确认买入。超过最高总价时整笔拒绝。
-- `/bank note transfer <币名> <在线玩家> <数量>` 直接转让未挂单的个人币。
-
-含中文的币名用双引号包起来，例如 `/market note list "泉" 64`。
-
-个人币挂单需要配套的银行核心。货币发行、储蓄、转账和通兑仍在银行办理。
-
-## 交易终端与指定结算货币
-
-`/market ui` 打开原版箱子交易终端，不需要客户端模组。可翻页浏览全部/自己的挂牌，查看卖方、币种和整单金额，选中后再次确认购买或撤销自己的挂牌。点击“挂牌手中物品”设置数量、整数单价和结算货币，再确认托管。关闭或返回不会提交。箱子里的图标不能取出，也不能用快捷移动/数字键绕过点击逻辑。
-
-`/market offer <currency> <price|shop> [count]` 按指定币种挂牌手中物品，例如 `/market offer copper 10 4`。旧 `/market list` 指令保留，继续使用配置默认货币。可选货币读取银行公开配置中的储蓄货币，个人券暂不能作为这类挂牌的付款货币。银行不存在时只提供市场配置默认值；成交仍会明确拒绝，不会伪造余额。
-
-每笔挂牌保存自己的币种；交易、退款和重启恢复都使用该币种，不会跟随之后的默认设置改变，也不会自动换汇。价格继续采用原有正整数规则。客户端可发送 `list <price|shop> <count> <currency>`；土地动作可在参数末尾附币种。`buy <id> <maxTotal>` 支持最高总价保护，当前价格高于确认值即拒绝，不扣款。原版箱子终端也采用该保护。
-
-同步消息增加 `explicitCurrency`、`maximumTotal`、`currencies: [{id,label}]`、`defaultCurrency`、`totalListings` 和 `truncated`。客户端同步最多 256 笔并限制消息长度；超限会标记 `truncated`，不能把截断列表当完整订单簿。原版箱子和聊天搜索仍可逐页访问全部挂牌。界面中的市场挂牌是卖方整单报价，不是连续双边撮合；没有捏造的买盘、成交量或 K 线。
-
-### 验证范围
-
-工作流 `.github/workflows/build.yml` 在推送或 PR 时以 Java 17 运行 `./gradlew build`（含 JUnit）。本次新增测试覆盖挂牌币种保存、按原币扣款/退款、最高总价与非法币种输入。服务器原版客户端的窗口交互、重连、余额不足及银行联调仍需实际启动验证；源码检查或纯逻辑断言不能代替游戏实测。
-
-### 领地入口接入市场
-
-搭配新版领地模组，领地出售/购买/撤销操作会打开原版箱子市场确认页，保留地图宗地/区块选区而不是误用玩家脚下位置。卖方选择正整数总价及支持币种，买方确认整单价格；结算与异常恢复复用 MarketDesk，不新增扣款路径。旧免费挂牌不会自动定价。手动 `/market ui` 仍可使用。需同时更新领地 `dot/land-market` 版本。
-
-## 实体市场柜台（原版客户端兼容）
-
-管理员（权限等级 2）看准柜台下方的方块执行 `/market outlet set <name>`。
-`name` 使用 1–32 位字母、数字、下划线或连字符。重复同名会迁移网点；
-`/market outlet list` 查看所有网点，`/market outlet remove <name>` 删除。
-柜台使用深色木座、石英台面、绿色饰条和悬浮「市场交易所」招牌，
-右键基座或柜台打开现有市场箱子终端，仍需确认价格才会扣款。
-无需客户端资源包、新方块或新付款账户；原有命令保持可用，不强制玩家只能在网点交易。
-
-网点写入世界的 `marketmod_outlets` 状态。加载中的区块每秒检查一次展示实体，
-重启、实体损坏或重复时重建；删除/迁移后未加载区块的旧标志会在重新加载后清理。
-不会强制加载远处区块，也不会替换或删除玩家建筑方块。
-展示实体不是实心方块；柜台需自行配合建筑底座。请勿把不同模组的柜台设在同一位置。
-
-
-## 内置客户端界面
-
-本主模组 JAR 同时包含服务端逻辑与可选客户端界面。服务器安装后，原版客户端无需安装本模组即可使用原有命令/原版菜单。客户端安装同一 JAR 可启用增强界面；界面只在客户端入口加载，服务端保持交易权威。
-
-升级时请移除旧 `marketmod-ui` 独立 JAR；同时安装会由 Fabric Loader 明确拒绝，以避免重复接收器、快捷键和类冲突。不要保留同一主模组的两个版本。只安装本地客户端不会改变远端服务器数据；不支持相关网络通道的服务器不会接收本 UI 操作。
-
-兼容性验收仍需分别执行：专用服务器+原版客户端、Fabric空客户端、完整客户端、单人世界切换远程服务器、旧 UI 包并存的拒绝提示、协议不匹配时的基础入口。构建通过不等同于实际联机验收。
-
-### 土地付款恢复边界
-
-未完成土地订单每 100 个服务器 tick 重试；读取银行收据后才恢复，异常不会中断服务器 tick。
-个人币土地出让在领地确认交付后，调用银行 `completePayment` 持久释放结算锁，失败保留 PAID 订单。
-价格/币种/范围在购买确认前重新核对；已经付款的订单不会按管理员后续修改重新计价。
-本次新增的周期耐久恢复覆盖土地交易；旧版市场物品背包交付没有幂等收据，不在周期重试范围内，
-不能据此宣称物品交易在所有崩溃窗口都不会重复交付。服务器存档应整体备份、整体恢复，不要单独回滚银行、市场或领地文件。
-
-### 个人币现货界面（1.0.6）
-
-安装配套银行 1.0.6 后，`/marketnoteui` 打开个人币交易，市场顶部模式按钮依次切换商品、领地、个人币。银行生成币种后自动显示目录条目，无卖盘或暂停时仍保留；不生成虚假库存。
-
-目录按稳定币种 UUID 关联，名称实时读取。界面显示持有、央行券余额、发行者待售量及可买最大单笔量。输入整数数量后获取服务器报价，再确认付款；确认 30 秒过期且只可使用一次。不能买自己的卖单，目前单次由一个卖家足量供给，不合并多位卖家。成交由银行重新检查价格、余额、实际库存和币种状态；价格超出确认上限则拒绝。
-
-原版客户端继续使用 `/market note search`、`/market note view "币名"`、`/market note quote "币名" 数量`、`/market note buy "币名" 数量 最高央行券总价`。增强界面并非原版加入服务器的前提。
-
-### 系统土地初售的付款币种
-
-新银行接口可用时，土地标价币种与买家付款币种分离。在原生购买确认页选择付款币种，服务器重新报价后显示实际扣款及央行券补齐额，再确认购买。钻石、铜锭只扣整数，不能整除的尾差以央行券补齐，不凭空找零。报价或准备金链改变会拒绝旧确认。资金与递归准备金会锁定至领地交付完成，交付失败按原始付款记录退款，重启恢复不会重新按汇率计算退款。私人二手挂牌目前仍按卖家指定币种支付。旧银行及原版客户端的箱子操作保留原币种付款。
-
-### 网点名称与柜台朝向
-
-网点名称支持中文与中间空格。OP 对准五格内实心底座（上方两格空气）执行 `/market outlet set 北京 总店`，右键柜台打开原有交易界面。
-`/market outlet rotate east 北京 总店` 将柜台正面朝东；方向可用 `north`、`east`、`south`、`west`。旧网点保持北向。旋转会持久保存，交互中心和朝向无关的正方形交互区保持在底座中心，悬浮文字仍居中面向玩家。
-`/market outlet remove 北京 总店` 删除网点，底座方块不变。重设同名网点位置会保留朝向。
+CI 对推送和 PR 运行完整 Gradle 构建及测试。当前发布经历了构建与逻辑检查，但这些不代替真实游戏点击、画面、多人联机或故障注入。部署前建议使用备份世界测试：原版客户端、完整客户端、重连、部分购买、撤销、资金不足、报价变动、中文网点旋转及土地付款恢复。
