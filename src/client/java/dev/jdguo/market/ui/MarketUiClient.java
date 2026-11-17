@@ -98,6 +98,13 @@ public final class MarketUiClient implements ClientModInitializer {
             return 1;
         })));
     }
+    /** Optional bank-client bridge: no server command or chat screen is required. */
+    public static boolean requestPersonalMarket() {
+        if (!available()) return false;
+        personalRequested = true;
+        openRequested = true;
+        return true;
+    }
     private static void open(MinecraftClient client) {
         var screen = new MarketScreen(latest);
         client.setScreen(screen);
