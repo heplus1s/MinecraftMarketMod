@@ -72,6 +72,7 @@ public final class MarketSync {
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             LISTENING.remove(handler.player.getUuid()); CATALOG_REQUESTS.remove(handler.player.getUuid());
             PersonalMarketChannel.disconnect(handler.player.getUuid());
+            SystemShopChannel.disconnect(handler.player.getUuid());
         });
     }
 
@@ -118,6 +119,7 @@ public final class MarketSync {
         if (parts[0].equals("notes") || parts[0].equals("notequote") || parts[0].equals("notebuy")) {
             PersonalMarketChannel.act(player, parts); return;
         }
+        if (parts[0].equals("shopquote") || parts[0].equals("shopconfirm")) { SystemShopChannel.act(player, parts); return; }
         MarketDesk desk = MarketDesk.get(player.getServer());
         if ("catalog".equals(parts[0]) && parts.length == 2) {
             catalog(player, parts[1]); return;
@@ -258,6 +260,7 @@ public final class MarketSync {
         root.addProperty("explicitCurrency", true);
         root.addProperty("maximumTotal", true);
         root.addProperty("partialItems", true);
+        root.addProperty("systemShop", SystemShopChannel.available());
         root.addProperty("bulkLimit", 2304);
         root.addProperty("defaultCurrency", dev.jdguo.market.config.MarketConfig.get().currency());
         JsonArray currencies = new JsonArray();
@@ -332,7 +335,13 @@ public final class MarketSync {
             t.addProperty("count", trade.getInt("Count")); t.addProperty("amount", trade.getString("Amount")); t.addProperty("at", trade.getLong("At"));
             trades.add(t);
         }
-        root.add("trades", trades);
+        // Completed journal rows only. Quotes are never fabricated candles or independent price signals.
+        for (var trade : SystemShopChannel.trades()) trades.add(trade);
+        var sorted = new java.util.ArrayList<com.google.gson.JsonElement>(); trades.forEach(sorted::add);
+        sorted.sort(java.util.Comparator.comparingLong(t -> t.getAsJsonObject().get("at").getAsLong()));
+        JsonArray history = new JsonArray();
+        sorted.stream().skip(Math.max(0, sorted.size()-160)).forEach(history::add);
+        root.add("trades", history);
         return root.toString();
     }
 

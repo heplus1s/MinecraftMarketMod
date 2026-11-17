@@ -221,6 +221,9 @@ public final class MarketDesk {
         return buy(player, id, maximumTotal, 0);
     }
     public MarketReply buy(ServerPlayerEntity player, String id, BigInteger maximumTotal, int requested) {
+        return buy(player, id, maximumTotal, requested, BankBridge.payments());
+    }
+    public MarketReply buy(ServerPlayerEntity player, String id, BigInteger maximumTotal, int requested, dev.jdguo.market.listing.Payments payments) {
         MarketBook.Lookup lookup = book().find(id);
         if (lookup.listing() == null) {
             return fail(lookup.ambiguous() ? "ambiguous" : "missing");
@@ -253,7 +256,7 @@ public final class MarketDesk {
             data.persistNow(); // Persist both remaining offer and split escrow before any payment.
         }
         Checkout.Outcome outcome = Checkout.buy(book(), listing.id(), player.getUuid(), player.getGameProfile().getName(),
-                amount, BankBridge.payments(), data::deliver, data::persistNow);
+                amount, payments, data::deliver, data::persistNow);
         if (!outcome.ok()) {
             if (!originalId.equals(listing.id()) && listing.status() == dev.jdguo.market.listing.ListingStatus.OPEN
                     && book().get(listing.id()).isPresent()) {

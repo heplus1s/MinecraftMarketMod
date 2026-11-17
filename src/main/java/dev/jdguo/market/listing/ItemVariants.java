@@ -10,7 +10,8 @@ import java.util.HexFormat;
 public final class ItemVariants {
     private ItemVariants() {}
     public static String key(NbtCompound stack) {
-        NbtCompound tag = stack.getCompound("tag");
+        NbtCompound tag = stack.getCompound("tag").copy();
+        if (tag.contains("Damage", 3) && tag.getInt("Damage") == 0) tag.remove("Damage");
         if (tag.isEmpty()) return "default";
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")

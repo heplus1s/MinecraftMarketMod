@@ -48,6 +48,10 @@ public final class MarketUiClient implements ClientModInitializer {
             String json=buf.readString(262144);
             client.execute(()->{try{if(client.currentScreen instanceof PersonalMarketScreen screen)screen.accept(JsonParser.parseString(json).getAsJsonObject());}catch(RuntimeException ignored){}});
         });
+        ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "system_shop"), (client, handler, buf, response) -> {
+            String json=buf.readString(32767);
+            client.execute(()->{try{if(client.currentScreen instanceof SystemShopScreen screen)screen.accept(JsonParser.parseString(json).getAsJsonObject());}catch(RuntimeException ignored){}});
+        });
         LandConfirmScreen.register();
         ClientPlayNetworking.registerGlobalReceiver(SYNC, (client, handler, buf, response) -> {
             String json = buf.readString(262144);

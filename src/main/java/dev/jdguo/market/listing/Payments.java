@@ -15,6 +15,8 @@ public interface Payments {
     }
 
     /** Release collateral reserved for a successfully delivered system purchase. Idempotent. */
+    default boolean requiresFinalization(String currency) { return currency.startsWith("personal:"); }
+
     default SettlementResult finalizePayment(String reference) { return SettlementResult.ok(); }
 
     SettlementResult paySeller(UUID buyer, UUID seller, String currency, BigInteger amount, String reference);

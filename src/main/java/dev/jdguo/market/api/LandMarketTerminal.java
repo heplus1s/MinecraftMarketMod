@@ -154,6 +154,9 @@ public final class LandMarketTerminal {
         MarketChestScreen.openLand(player, parcelId, chunks, action.equals("sell") && listing == null, listing == null ? null : listing.id());
     }
     static String confirmInitial(ServerPlayerEntity player, String dimension, int[] coordinates, JsonObject displayed) {
+        return confirmInitial(player, dimension, coordinates, displayed, dev.jdguo.market.integrate.BankBridge.payments());
+    }
+    static String confirmInitial(ServerPlayerEntity player, String dimension, int[] coordinates, JsonObject displayed, Payments payments) {
         MinecraftServer server = player.getServer();
         JsonObject fresh = quoteObject(server, player.getUuid(), dimension, coordinates);
         if (!fresh.get("buyable").getAsBoolean() || !"initial".equals(fresh.get("kind").getAsString())) return fresh.get("reason").getAsString();
@@ -162,7 +165,7 @@ public final class LandMarketTerminal {
         Listing order = Listing.initialGrant(UUID.randomUUID(), new BigInteger(fresh.get("total").getAsString()), fresh.get("currency").getAsString(), dimension, selection(dimension, coordinates));
         if (!data.book().add(order)) return "无法建立交易";
         data.persistNow();
-        var reply = MarketDesk.get(server).buy(player, order.id().toString(), order.customTotal());
+        var reply = MarketDesk.get(server).buy(player, order.id().toString(), order.customTotal(), 0, payments);
         // Unpaid/refunded OPEN orders are not public listings. Reserved/PAID stay for recovery.
         Listing left = data.book().get(order.id()).orElse(null);
         if (left != null && left.status() == ListingStatus.OPEN) { data.book().remove(order.id()); data.persistNow(); }

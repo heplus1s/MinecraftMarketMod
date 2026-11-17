@@ -32,4 +32,10 @@ class MarketLayoutTest {
   }
  }
  @Test void tooSmallViewportsRequestLowerGuiScaleInsteadOfHidingSections(){assertFalse(MarketLayout.supported(427,240));assertFalse(MarketLayout.supported(640,240));assertTrue(MarketLayout.supported(640,360));}
+ @Test void systemQuoteRowsAndPlayerOrdersStayAbovePager(){
+  for(int[] size:new int[][]{{480,300},{640,360},{800,440},{1280,720}}){var b=MarketLayout.at(size[0],size[1]).book();int n=Math.max(1,(b.height()-87)/23);
+   assertTrue(24+18<47);assertTrue(47+18<68);
+   assertTrue(68+(n-1)*23+18<b.height()-24,"system quotes, player rows and pager must not overlap");
+  }
+ }
 }
