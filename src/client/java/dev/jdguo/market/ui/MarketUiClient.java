@@ -22,6 +22,14 @@ public final class MarketUiClient implements ClientModInitializer {
     private static boolean openRequested;
     private static int awaitingOpen;
     @Override public void onInitializeClient() {
+        ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "open"), (client, handler, buf, response) -> {
+            String json = buf.readString(262144);
+            client.execute(() -> {
+                try { latest = JsonParser.parseString(json).getAsJsonObject(); awaitingOpen = 0; client.setScreen(new MarketScreen(latest)); }
+                catch (RuntimeException ignored) { }
+            });
+        });
+        LandConfirmScreen.register();
         ClientPlayNetworking.registerGlobalReceiver(SYNC, (client, handler, buf, response) -> {
             String json = buf.readString(262144);
             client.execute(() -> {

@@ -19,14 +19,32 @@ public final class ItemDelivery {
         }
         ServerPlayerEntity player = server.getPlayerManager().getPlayer(buyer);
         if (player == null) {
-            return Handoff.Outcome.success(stack.writeNbt(new NbtCompound()));
+            return Handoff.Outcome.success(write(stack));
         }
-        player.getInventory().insertStack(stack);
+        insert(player, stack);
         DurablePlayerInventory.save(player);
         if (stack.isEmpty()) {
             return Handoff.Outcome.success(null);
         }
-        return Handoff.Outcome.success(stack.writeNbt(new NbtCompound()));
+        return Handoff.Outcome.success(write(stack));
+    }
+
+    public static NbtCompound write(ItemStack stack) {
+        ItemStack template = stack.copy(); template.setCount(1);
+        NbtCompound tag = template.writeNbt(new NbtCompound());
+        tag.putInt("MarketCount", stack.getCount());
+        return tag;
+    }
+    /** Never pass oversized stacks to vanilla inventory insertion. */
+    public static void insert(ServerPlayerEntity player, ItemStack remaining) {
+        while (!remaining.isEmpty()) {
+            ItemStack batch = remaining.copy(); batch.setCount(Math.min(remaining.getCount(), batch.getMaxCount()));
+            int before = batch.getCount();
+            player.getInventory().insertStack(batch);
+            int moved = before - batch.getCount();
+            remaining.decrement(moved);
+            if (moved == 0 || !batch.isEmpty()) break;
+        }
     }
 
     public static ItemStack read(NbtCompound item) {
@@ -34,7 +52,13 @@ public final class ItemDelivery {
             return ItemStack.EMPTY;
         }
         try {
-            return ItemStack.fromNbt(item.copy());
+            ItemStack stack = ItemStack.fromNbt(item.copy());
+            if (item.contains("MarketCount")) {
+                int count = item.getInt("MarketCount");
+                if (count <= 0 || count > 2304) return ItemStack.EMPTY;
+                stack.setCount(count);
+            }
+            return stack;
         } catch (RuntimeException exception) {
             return ItemStack.EMPTY;
         }

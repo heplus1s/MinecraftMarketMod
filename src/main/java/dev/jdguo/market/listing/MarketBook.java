@@ -138,6 +138,20 @@ public final class MarketBook {
         return deal;
     }
 
+    public Listing splitItem(UUID id, int quantity) {
+        Listing original = listings.get(id);
+        if (original == null) throw new IllegalArgumentException("missing");
+        Listing part = original.split(quantity);
+        listings.put(part.id(), part);
+        return part;
+    }
+    public void restoreSplit(UUID originalId, UUID childId) {
+        Listing original = listings.get(originalId), child = listings.get(childId);
+        if (original == null || child == null || deals.values().stream().anyMatch(d -> d.listingId().equals(childId))) throw new IllegalStateException("split");
+        original.restoreSplit(child); listings.remove(childId);
+    }
+    public List<NbtCompound> recentTrades() { return trades.stream().skip(Math.max(0, trades.size()-80)).map(NbtCompound::copy).toList(); }
+
     public void markPaid(UUID dealId) {
         Deal deal = deals.get(dealId);
         if (deal == null) {

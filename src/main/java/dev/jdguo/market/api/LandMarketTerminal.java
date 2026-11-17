@@ -72,13 +72,13 @@ public final class LandMarketTerminal {
             out.addProperty("total", settings.price.multiply(BigInteger.valueOf(selected.size())).toString());
             out.addProperty("currency", settings.currency); out.addProperty("currencyName", currencyName(settings.currency));
             scope(out, selected);
-            String reason = !settings.enabled || !MarketConfig.get().serverLandSales() ? "管理员尚未启用土地首售" :
-                    !MarketCurrencies.acceptsLand(settings.currency) ? "首售币种暂不可用" : LandBridge.initialGrantCheck(server, viewer, dimension, LandBridge.coordinates(selected));
+            String reason = !settings.enabled || !MarketConfig.get().serverLandSales() ? "管理员尚未启用无主地块出售" :
+                    !MarketCurrencies.acceptsLand(settings.currency) ? "无主地块出售币种暂不可用" : LandBridge.initialGrantCheck(server, viewer, dimension, LandBridge.coordinates(selected));
             // A PAID or unresolved initial grant must not be sold a second time.
             for (Listing pending : MarketDesk.get(server).book().all()) {
                 if (pending.initialGrant() && pending.chunks().stream().anyMatch(selected::contains)) reason = "所选范围有未完成交易，请等待恢复";
             }
-            out.addProperty("buyable", "ok".equals(reason)); out.addProperty("reason", "ok".equals(reason) ? "首售整批总价" : reason);
+            out.addProperty("buyable", "ok".equals(reason)); out.addProperty("reason", "ok".equals(reason) ? "无主地块整批总价" : reason);
             return out;
         } catch (RuntimeException error) { return denied("无法核验选区，请刷新或检查领地版本"); }
     }
@@ -117,7 +117,7 @@ public final class LandMarketTerminal {
                 try { settings.save(server); }
                 catch (RuntimeException saveError) { settings.enabled = oldEnabled; settings.price = oldPrice; settings.currency = oldCurrency; settings.revision = oldRevision; settings.markDirty(); throw saveError; }
             } else if (!"get".equals(action)) throw new IllegalArgumentException("未知管理操作");
-            out.addProperty("ok", true); out.addProperty("reason", "只影响未来首售，不修改已有挂牌");
+            out.addProperty("ok", true); out.addProperty("reason", "只影响未来无主地块出售，不修改已有挂牌");
             out.addProperty("enabled", settings.enabled); out.addProperty("price", settings.price.toString());
             out.addProperty("currency", settings.currency); out.addProperty("currencyName", currencyName(settings.currency)); out.addProperty("revision", Long.toString(settings.revision));
             JsonArray currencies = new JsonArray(); for (var o : MarketCurrencies.landOptions()) { JsonObject row = new JsonObject(); row.addProperty("id", o.id()); row.addProperty("label", o.label()); currencies.add(row); } out.add("currencies", currencies);
@@ -129,11 +129,12 @@ public final class LandMarketTerminal {
         // Preserve the legacy empty-selection meaning: the entire known parcel.
         if (parcelId != null && coordinates != null && coordinates.length == 0) {
             var whole = LandBridge.parcel(player.getServer(), parcelId);
-            if (whole != null) coordinates = LandBridge.coordinates(whole.chunks());
+            if (whole != null) { coordinates = LandBridge.coordinates(whole.chunks()); dimension = whole.dimension(); }
         }
         if ("buy".equals(action)) {
             JsonObject quote = quoteObject(player.getServer(), player.getUuid(), dimension, coordinates);
             if (!quote.get("buyable").getAsBoolean()) { player.sendMessage(Text.literal(quote.get("reason").getAsString()), false); return; }
+            if (LandUiChannel.open(player, "buy", parcelId, dimension, coordinates, quote)) return;
             if ("initial".equals(quote.get("kind").getAsString())) { InitialLandScreen.open(player, dimension, coordinates, quote); return; }
         }
         var land = parcelId == null ? null : LandBridge.parcel(player.getServer(), parcelId);
@@ -145,6 +146,11 @@ public final class LandMarketTerminal {
         if (!land.chunks().containsAll(chunks)) { player.sendMessage(Text.literal("选区已变化，请刷新。"), false); return; }
         var listing = MarketDesk.get(player.getServer()).book().listingForParcel(parcelId);
         if (!action.equals("sell") && listing == null) { player.sendMessage(Text.literal("该领地没有市场挂牌。旧免费挂牌不会自动定价，请卖方重新挂牌。"), false); return; }
+        if (action.equals("sell") && listing == null) {
+            JsonObject form = new JsonObject(); form.addProperty("chunks", chunks.size());
+            form.addProperty("currency", MarketConfig.get().currency()); form.addProperty("total", "1");
+            if (LandUiChannel.open(player, "sell", parcelId, dimension, coordinates, form)) return;
+        }
         MarketChestScreen.openLand(player, parcelId, chunks, action.equals("sell") && listing == null, listing == null ? null : listing.id());
     }
     static String confirmInitial(ServerPlayerEntity player, String dimension, int[] coordinates, JsonObject displayed) {

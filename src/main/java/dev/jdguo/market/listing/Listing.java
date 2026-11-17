@@ -34,7 +34,7 @@ public final class Listing {
     private final PriceMode priceMode;
     private final BigInteger unitPrice;
     private final String currency;
-    private final int count;
+    private int count;
     private final String itemId;
     private final NbtCompound item;
     private final UUID parcelId;
@@ -257,7 +257,30 @@ public final class Listing {
     }
 
     public NbtCompound item() {
-        return item.copy();
+        NbtCompound result = item.copy();
+        result.putInt("MarketCount", count);
+        return result;
+    }
+
+    /** Split escrow only, never create or copy inventory ownership. Called on server thread. */
+    Listing split(int quantity) {
+        if (kind != ListingKind.ITEM || status != ListingStatus.OPEN || quantity <= 0 || quantity >= count)
+            throw new IllegalArgumentException("quantity");
+        Listing part = new Listing(UUID.randomUUID(), kind, seller, sellerName, proceeds, priceMode,
+                unitPrice, currency, quantity, itemId, item, null, "", "", List.of(), createdAt,
+                ListingStatus.OPEN, null, extra);
+        count -= quantity;
+        return part;
+    }
+    void restoreSplit(Listing part) {
+        if (status != ListingStatus.OPEN || part.status != ListingStatus.OPEN || !seller.equals(part.seller)
+                || !itemId.equals(part.itemId) || count + part.count > 2304) throw new IllegalStateException("split");
+        count += part.count;
+    }
+    public int shopPercent() { return extra.contains("ShopPercent") ? extra.getInt("ShopPercent") : 100; }
+    public void shopPercent(int percent) {
+        if (priceMode != PriceMode.SHOP || percent < 1 || percent > 1000) throw new IllegalArgumentException("percent");
+        extra.putInt("ShopPercent", percent);
     }
 
     public UUID parcelId() {
