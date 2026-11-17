@@ -54,6 +54,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
     }
 
     public static void open(ServerPlayerEntity player) {
+        if (dev.jdguo.market.net.MarketSync.open(player)) return;
         player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, inv, who) ->
                 new MarketChestScreen(id, inv, player, new SimpleInventory(54)), Text.literal("市场 · 挂牌交易")));
     }

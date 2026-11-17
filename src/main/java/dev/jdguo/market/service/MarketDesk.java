@@ -249,6 +249,7 @@ public final class MarketDesk {
         UUID originalId = listing.id();
         if (listing.kind() == ListingKind.ITEM && quantity < listing.count()) {
             listing = book().splitItem(listing.id(), quantity);
+            book().lockItem(originalId); // Unknown child outcome also freezes the remaining escrow.
             data.persistNow(); // Persist both remaining offer and split escrow before any payment.
         }
         Checkout.Outcome outcome = Checkout.buy(book(), listing.id(), player.getUuid(), player.getGameProfile().getName(),
@@ -256,13 +257,14 @@ public final class MarketDesk {
         if (!outcome.ok()) {
             if (!originalId.equals(listing.id()) && listing.status() == dev.jdguo.market.listing.ListingStatus.OPEN
                     && book().get(listing.id()).isPresent()) {
-                book().restoreSplit(originalId, listing.id()); data.persistNow();
+                book().unlockItem(originalId); book().restoreSplit(originalId, listing.id()); data.persistNow();
             }
             if ("stale".equals(outcome.code()) && listing.parcelId() != null) {
                 LandBridge.clear(listing.parcelId());
             }
             return fail(outcome.code());
         }
+        if (!originalId.equals(listing.id())) { book().unlockItem(originalId); data.persistNow(); }
         if (listing.parcelId() != null) {
             LandBridge.clear(listing.parcelId());
         }

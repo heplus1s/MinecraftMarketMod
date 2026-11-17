@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class MarketSync {
     public static final int PROTOCOL = 1;
+    public static final Identifier OPEN = new Identifier("marketmod", "open");
     public static final Identifier HELLO = new Identifier("marketmod", "hello");
     public static final Identifier ACTION = new Identifier("marketmod", "action");
     public static final Identifier SYNC = new Identifier("marketmod", "sync");
@@ -66,6 +67,13 @@ public final class MarketSync {
             server.execute(() -> act(player, action));
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> LISTENING.remove(handler.player.getUuid()));
+    }
+
+    public static boolean open(ServerPlayerEntity player) {
+        if (!ServerPlayNetworking.canSend(player, OPEN) || !ServerPlayNetworking.canSend(player, SYNC) || !ServerPlayNetworking.canSend(player, RESULT)) return false;
+        LISTENING.add(player.getUuid());
+        send(player, OPEN, snapshot(MarketDesk.get(player.getServer())));
+        return true;
     }
 
     public static void broadcast(MinecraftServer server) {
