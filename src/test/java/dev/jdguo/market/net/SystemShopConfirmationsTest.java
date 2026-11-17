@@ -21,6 +21,7 @@ class SystemShopConfirmationsTest {
         assertNull(c.consume(id,old.token(),2));
         var next=c.put(id,"minecraft:bow",1,true,BigDecimal.ONE,3);c.remove(id);
         assertNull(c.consume(id,next.token(),4));
+        var last=c.put(id,"minecraft:bow",1,true,BigDecimal.ONE,4);c.clear();assertNull(c.consume(id,last.token(),5));
         assertThrows(IllegalArgumentException.class,()->c.put(id,"minecraft:bow",-1,true,BigDecimal.ONE,0));
     }
 }

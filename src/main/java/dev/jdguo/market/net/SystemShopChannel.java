@@ -12,6 +12,7 @@ public final class SystemShopChannel {
     public static final Identifier CHANNEL = new Identifier("marketmod", "system_shop");
     private static final SystemShopConfirmations pending = new SystemShopConfirmations();
     private SystemShopChannel() {}
+    public static void clear() { pending.clear(); }
     public static void disconnect(UUID player) { pending.remove(player); }
     public static boolean available() {
         try { Class.forName("dev.jdguo.shop.api.ShopMarket"); return true; }

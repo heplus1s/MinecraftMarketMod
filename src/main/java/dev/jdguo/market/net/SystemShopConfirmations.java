@@ -18,5 +18,6 @@ public final class SystemShopConfirmations {
         var order=pending.remove(player);
         return order!=null && order.token().equals(token) && now<=order.expires()?order:null;
     }
+    public void clear(){pending.clear();}
     public void remove(UUID player){pending.remove(player);}
 }

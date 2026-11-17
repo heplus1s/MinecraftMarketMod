@@ -44,6 +44,7 @@ public final class MarketSync {
     }
 
     public static void register() {
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents.SERVER_STOPPED.register(server -> SystemShopChannel.clear());
         ServerPlayNetworking.registerGlobalReceiver(HELLO, (server, player, handler, buf, response) -> {
             int version;
             try {
