@@ -42,7 +42,7 @@ public final class MarketOutlets extends PersistentState {
         for (int i=0; i<list.size(); i++) {
             NbtCompound v = list.getCompound(i);
             String name = v.getString("name");
-            if (MarketOutlet.validName(name)) state.outlets.put(name, new MarketOutlet(name,v.getString("world"),v.getInt("x"),v.getInt("y"),v.getInt("z")));
+            if (MarketOutlet.validName(name)) state.outlets.put(name, new MarketOutlet(name,v.getString("world"),v.getInt("x"),v.getInt("y"),v.getInt("z"), CounterRotation.normalize(v.getInt("facing"))));
         }
         return state;
     }
@@ -50,15 +50,16 @@ public final class MarketOutlets extends PersistentState {
         NbtList list = new NbtList();
         for (MarketOutlet p : outlets.values()) {
             NbtCompound v = new NbtCompound(); v.putString("name",p.name()); v.putString("world",p.world());
-            v.putInt("x",p.x());v.putInt("y",p.y());v.putInt("z",p.z());list.add(v);
+            v.putInt("x",p.x());v.putInt("y",p.y());v.putInt("z",p.z());v.putInt("facing",CounterRotation.normalize(p.facing()));list.add(v);
         }
         nbt.put("outlets",list);return nbt;
     }
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher,access,environment) -> dispatcher.register(literal("market")
             .then(literal("outlet").requires(s -> s.hasPermissionLevel(2))
-                .then(literal("set").then(argument("name", StringArgumentType.word()).executes(c -> set(c.getSource(),StringArgumentType.getString(c,"name")))))
-                .then(literal("remove").then(argument("name",StringArgumentType.word()).executes(c -> remove(c.getSource(),StringArgumentType.getString(c,"name")))))
+                .then(literal("set").then(argument("name", StringArgumentType.greedyString()).executes(c -> set(c.getSource(),StringArgumentType.getString(c,"name")))))
+                .then(literal("remove").then(argument("name",StringArgumentType.greedyString()).executes(c -> remove(c.getSource(),StringArgumentType.getString(c,"name")))))
+                .then(rotationCommand())
                 .then(literal("list").executes(c -> { for (MarketOutlet p:get(c.getSource().getServer()).outlets.values()) c.getSource().sendFeedback(() -> Text.literal(p.name()+" · "+p.world()+" "+p.x()+" "+p.y()+" "+p.z()),false);return 1; })) )));
         UseBlockCallback.EVENT.register((player,world,hand,hit) -> {
             if (!(player instanceof ServerPlayerEntity p) || hand != Hand.MAIN_HAND || p.isSpectator()) return ActionResult.PASS;
@@ -79,7 +80,7 @@ public final class MarketOutlets extends PersistentState {
     }
     private static int set(ServerCommandSource source,String name) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayerEntity p=source.getPlayerOrThrow();
-        if(!MarketOutlet.validName(name)) {source.sendError(Text.literal("网点名称须为1–32位字母、数字、下划线或连字符"));return 0;}
+        if(!MarketOutlet.validName(name)) {source.sendError(Text.literal("网点名称须为1–32位中外文字、数字、空格、下划线或连字符"));return 0;}
         HitResult hit=p.raycast(5,0,false);
         if(!(hit instanceof BlockHitResult block) || hit.getType()!=HitResult.Type.BLOCK) {source.sendError(Text.literal("请看准柜台下方的实体方块"));return 0;}
         var pos=block.getBlockPos();
@@ -96,8 +97,27 @@ public final class MarketOutlets extends PersistentState {
         }
         for(MarketOutlet old:state.outlets.values()) if(!old.name().equals(name) && old.at(dim,pos.getX(),pos.getY(),pos.getZ())) {source.sendError(Text.literal("此位置已有市场网点"));return 0;}
         state.clearLoaded(source.getServer(),name);
-        state.outlets.put(name,new MarketOutlet(name,dim,pos.getX(),pos.getY(),pos.getZ()));state.markDirty();source.getServer().getOverworld().getPersistentStateManager().save();
+        state.outlets.put(name,new MarketOutlet(name,dim,pos.getX(),pos.getY(),pos.getZ(),state.outlets.containsKey(name)?state.outlets.get(name).facing():0));state.markDirty();source.getServer().getOverworld().getPersistentStateManager().save();
         state.reconcile(source.getServer()); source.sendFeedback(() -> Text.literal("已设置市场柜台 "+name+"；右键打开挂牌交易"),true);return 1;
+    }
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<ServerCommandSource> rotationCommand() {
+        var rotation = literal("rotate");
+        for (int i = 0; i < 4; i++) {
+            final int facing = i;
+            rotation.then(literal(CounterRotation.name(i)).then(argument("name", StringArgumentType.greedyString())
+                    .executes(ctx -> rotate(ctx.getSource(), StringArgumentType.getString(ctx, "name"), facing))));
+        }
+        return rotation;
+    }
+    private static int rotate(ServerCommandSource source, String name, int facing) {
+        MarketOutlets state = get(source.getServer());
+        MarketOutlet outlet = state.outlets.get(name);
+        if (outlet == null) { source.sendError(Text.literal("没有这个市场网点。")); return 0; }
+        state.outlets.put(name, outlet.rotated(facing)); state.markDirty();
+        source.getServer().getOverworld().getPersistentStateManager().save();
+        state.clearLoaded(source.getServer(), name); state.reconcile(source.getServer());
+        source.sendFeedback(() -> Text.literal("市场柜台 " + name + " 已朝向 " + CounterRotation.name(facing)), true);
+        return 1;
     }
     private static int remove(ServerCommandSource source,String name) {
         MarketOutlets state=get(source.getServer());
@@ -117,7 +137,7 @@ public final class MarketOutlets extends PersistentState {
             for(Entity e:world.iterateEntities()) if(e.getCommandTags().contains(TAG)) {
                 String key=e.getCommandTags().stream().filter(t->t.startsWith(NAME)).map(t->t.substring(NAME.length())).findFirst().orElse("");
                 MarketOutlet p=outlets.get(key);
-                if(p==null || !p.world().equals(dim) || !world.isChunkLoaded(p.x()>>4,p.z()>>4) || world.getBlockState(new BlockPos(p.x(),p.y(),p.z())).isAir() || Math.abs(e.getX()-(p.x()+.5))>.01 || Math.abs(e.getZ()-(p.z()+.5))>.01
+                if(p==null || !matchesFacing(e,p.facing()) || !p.world().equals(dim) || !world.isChunkLoaded(p.x()>>4,p.z()>>4) || world.getBlockState(new BlockPos(p.x(),p.y(),p.z())).isAir() || Math.abs(e.getX()-(p.x()+.5))>.01 || Math.abs(e.getZ()-(p.z()+.5))>.01
                         || Math.abs(e.getY()-(p.y()+(e instanceof DisplayEntity.TextDisplayEntity ? 3 : 1)))>.01) orphan.add(e);
                 else found.computeIfAbsent(key,k->new ArrayList<>()).add(e);
             }
@@ -129,7 +149,7 @@ public final class MarketOutlets extends PersistentState {
             }
         }
     }
-    private static void tag(Entity e,MarketOutlet p) {e.addCommandTag(TAG);e.addCommandTag(NAME+p.name());e.setInvulnerable(true);e.setSilent(true);e.setNoGravity(true);}
+    private static void tag(Entity e,MarketOutlet p) {e.addCommandTag(TAG);e.addCommandTag("marketmod_facing_"+CounterRotation.normalize(p.facing()));e.addCommandTag(NAME+p.name());e.setInvulnerable(true);e.setSilent(true);e.setNoGravity(true);}
     private static void spawn(ServerWorld world,MarketOutlet p) {
         InteractionEntity hit=new InteractionEntity(EntityType.INTERACTION,world);tag(hit,p);
         hit.refreshPositionAndAngles(p.x()+.5,p.y()+1,p.z()+.5,0,0);
@@ -146,7 +166,12 @@ public final class MarketOutlets extends PersistentState {
     private static void part(ServerWorld world,MarketOutlet p,Block block,float x,float y,float z,float sx,float sy,float sz) {
         DisplayEntity.BlockDisplayEntity d=new DisplayEntity.BlockDisplayEntity(EntityType.BLOCK_DISPLAY,world);tag(d,p);d.refreshPositionAndAngles(p.x()+.5,p.y()+1,p.z()+.5,0,0);
         NbtCompound n=new NbtCompound();d.writeNbt(n);NbtCompound s=new NbtCompound();s.putString("Name",Registries.BLOCK.getId(block).toString());n.put("block_state",s);
-        NbtCompound tr=new NbtCompound();tr.put("translation",vec(x,y,z));tr.put("scale",vec(sx,sy,sz));tr.put("left_rotation",vec(0,0,0,1));tr.put("right_rotation",vec(0,0,0,1));n.put("transformation",tr);d.readNbt(n);world.spawnEntity(d);
+        NbtCompound tr=new NbtCompound();tr.put("translation",vec((float)CounterRotation.x(p.facing(),x,z),y,(float)CounterRotation.z(p.facing(),x,z)));tr.put("scale",vec(sx,sy,sz));tr.put("left_rotation",vec(0,(float)-Math.sin(p.facing()*Math.PI/4),0,(float)Math.cos(p.facing()*Math.PI/4)));tr.put("right_rotation",vec(0,0,0,1));n.put("transformation",tr);d.readNbt(n);world.spawnEntity(d);
+    }
+    private static boolean matchesFacing(Entity e, int facing) {
+        String prefix = "marketmod_facing_";
+        var tags = e.getCommandTags();
+        return tags.contains(prefix + CounterRotation.normalize(facing)) || (CounterRotation.normalize(facing) == 0 && tags.stream().noneMatch(t -> t.startsWith(prefix)));
     }
     private static NbtList vec(float... values) {NbtList list=new NbtList();for(float v:values)list.add(NbtFloat.of(v));return list;}
 }

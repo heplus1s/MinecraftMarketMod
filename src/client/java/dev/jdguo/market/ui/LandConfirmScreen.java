@@ -28,12 +28,16 @@ public final class LandConfirmScreen extends Screen {
     }
     public static void register() {
         ClientPlayNetworking.registerGlobalReceiver(LandUiChannel.OPEN, (client, handler, buf, sender) -> {
-            String json = buf.readString(32767);
-            client.execute(() -> { try { client.setScreen(new LandConfirmScreen(JsonParser.parseString(json).getAsJsonObject(), client.currentScreen instanceof LandConfirmScreen old ? old.parent : client.currentScreen)); } catch (RuntimeException ignored) {} });
+            String json;
+            try { json = buf.readString(32767); } catch (RuntimeException malformed) { return; }
+            client.execute(() -> {
+                if (client.getNetworkHandler() != handler || client.player == null) return; try { client.setScreen(new LandConfirmScreen(JsonParser.parseString(json).getAsJsonObject(), client.currentScreen instanceof LandConfirmScreen old ? old.parent : client.currentScreen)); } catch (RuntimeException ignored) {} });
         });
         ClientPlayNetworking.registerGlobalReceiver(LandUiChannel.RESULT, (client, handler, buf, sender) -> {
-            String json = buf.readString(4096);
-            client.execute(() -> { try {
+            String json;
+            try { json = buf.readString(4096); } catch (RuntimeException malformed) { return; }
+            client.execute(() -> {
+                if (client.getNetworkHandler() != handler || client.player == null) return; try {
                 if (client.currentScreen instanceof LandConfirmScreen screen) screen.message = text(JsonParser.parseString(json).getAsJsonObject(), "message");
             } catch (RuntimeException ignored) {} });
         });
