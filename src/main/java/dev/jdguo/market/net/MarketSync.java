@@ -53,6 +53,7 @@ public final class MarketSync {
                 return;
             }
             server.execute(() -> {
+                if (server.getPlayerManager().getPlayer(player.getUuid()) != player || player.networkHandler != handler) return;
                 if (version == PROTOCOL) {
                     LISTENING.add(player.getUuid());
                     send(player, SYNC, snapshot(MarketDesk.get(server)));
@@ -68,7 +69,10 @@ public final class MarketSync {
             } catch (RuntimeException exception) {
                 return;
             }
-            server.execute(() -> act(player, action));
+            server.execute(() -> {
+                if (server.getPlayerManager().getPlayer(player.getUuid()) != player || player.networkHandler != handler) return;
+                act(player, action);
+            });
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             LISTENING.remove(handler.player.getUuid()); CATALOG_REQUESTS.remove(handler.player.getUuid());
