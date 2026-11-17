@@ -13,4 +13,21 @@ class PersonalConfirmationsTest {
     @Test void newestQuoteReplacesPrevious(){var old=offer();var next=offer();assertNotEquals(old.token(),next.token());assertNull(book.consume(player,old.token(),1001));}
     @Test void disconnectClears(){var o=offer();book.remove(player);assertNull(book.consume(player,o.token(),1001));}
     @Test void invalidAmountsNeverIssued(){assertThrows(IllegalArgumentException.class,()->book.put(player,coin,BigInteger.ZERO,BigDecimal.ONE,1));assertThrows(IllegalArgumentException.class,()->book.put(player,coin,BigInteger.ONE,BigDecimal.ZERO,1));}
+    @Test void paymentQuoteBoundToToken(){
+        String json="{\"physical\":\"3\",\"change\":\"0.5\"}";
+        var o=book.put(player,coin,BigInteger.TEN,new BigDecimal("1.25"),"diamond",json,false,1000);
+        var found=book.consume(player,o.token(),1001);
+        assertEquals("diamond",found.tender());assertEquals(json,found.quote());assertFalse(found.legacy());
+        assertNull(book.consume(player,o.token(),1002));
+    }
+    @Test void otherTenderInvalidatesPreviousQuote(){
+        var old=offer();var next=book.put(player,coin,BigInteger.TEN,BigDecimal.ONE,"copper","{}",false,1001);
+        assertNotEquals(old.token(),next.token());assertEquals("copper",book.consume(player,next.token(),1002).tender());
+        assertNull(book.consume(player,old.token(),1003));
+    }
+    @Test void personalPaymentPreservesExactQuote(){
+        String tender="personal:"+UUID.randomUUID();String quote="{\"paymentAmount\":\"0.12345678\",\"rate\":\"0.012345678\"}";
+        var o=book.put(player,coin,BigInteger.TEN,BigDecimal.ONE,tender,quote,false,1000);
+        var read=book.consume(player,o.token(),1001);assertEquals(tender,read.tender());assertEquals(quote,read.quote());
+    }
 }
