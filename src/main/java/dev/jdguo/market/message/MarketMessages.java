@@ -18,12 +18,10 @@ public final class MarketMessages {
     }
 
     public static String currency(String id) {
-        return switch (id) {
-            case "note" -> "银行券";
-            case "diamond" -> "钻石";
-            case "copper" -> "铜锭";
-            default -> id == null ? "" : (id.startsWith("personal:") ? dev.jdguo.market.integrate.MarketCurrencies.options().stream().filter(o -> o.id().equals(id)).map(dev.jdguo.market.integrate.MarketCurrencies.Option::label).findFirst().orElse(id) : id);
-        };
+        if (id == null) return "";
+        return dev.jdguo.market.integrate.MarketCurrencies.options().stream()
+                .filter(option -> option.id().equals(id)).map(dev.jdguo.market.integrate.MarketCurrencies.Option::label)
+                .findFirst().orElseGet(() -> dev.jdguo.market.integrate.MarketCurrencies.fallbackLabel(id));
     }
 
     public static String dimension(String id) {

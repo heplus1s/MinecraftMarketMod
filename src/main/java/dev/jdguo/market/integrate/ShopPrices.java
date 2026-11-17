@@ -15,6 +15,8 @@ import java.util.List;
  */
 public final class ShopPrices {
     private static volatile Method shopMethod;
+    private static volatile Method sidedMethod;
+    private static volatile boolean sidedLookedUp;
     private static volatile boolean shopLookedUp;
 
     private ShopPrices() {
@@ -50,9 +52,13 @@ public final class ShopPrices {
 
     public static BigDecimal exactQuote(String itemId, String currency, boolean playerBuys) {
         try {
-            Class<?> shop = Class.forName(ShopPriceApi.SHOP_CLASS);
-            Object quote = shop.getMethod("quoteEach", String.class, String.class, boolean.class)
-                    .invoke(null, itemId, currency, playerBuys);
+            if (!sidedLookedUp) {
+                sidedLookedUp = true;
+                sidedMethod = Class.forName(ShopPriceApi.SHOP_CLASS)
+                        .getMethod("quoteEach", String.class, String.class, boolean.class);
+            }
+            if (sidedMethod == null) return null;
+            Object quote = sidedMethod.invoke(null, itemId, currency, playerBuys);
             return quote instanceof BigDecimal amount && amount.signum() > 0 ? amount : null;
         } catch (ClassNotFoundException | NoSuchMethodException ignored) {
             return null;
@@ -64,6 +70,8 @@ public final class ShopPrices {
 
     public static void resetForTests() {
         shopLookedUp = false;
+        sidedLookedUp = false;
+        sidedMethod = null;
         shopMethod = null;
         ShopPriceApi.install(null);
     }

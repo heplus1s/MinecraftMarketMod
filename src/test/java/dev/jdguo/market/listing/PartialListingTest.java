@@ -47,6 +47,8 @@ class PartialListingTest {
         assertTrue(disk.get(part.id()).isEmpty());
         assertEquals(129, disk.pendingOf(deal.buyer()).get(0).item().getInt("MarketCount"));
         assertEquals(1, disk.tradeCount());
+        assertEquals(ItemVariants.key(part.item()), disk.recentTrades().get(0).getString("VariantKey"));
+        assertEquals(129, disk.recentTrades().get(0).getInt("Count"));
     }
     @Test void abortedPartRetainsBothOffersWithoutMintingEscrow() {
         MarketBook book = new MarketBook(); Listing original = item(200); book.add(original);

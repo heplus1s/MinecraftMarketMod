@@ -18,6 +18,8 @@ public final class MarketUiClient implements ClientModInitializer {
     static final Identifier ACTION = new Identifier("marketmod", "action");
     static final Identifier SYNC = new Identifier("marketmod", "sync");
     static final Identifier RESULT = new Identifier("marketmod", "result");
+    private static CatalogPages catalogPages = new CatalogPages();
+    private static CatalogPages.Snapshot latestCatalog;
     private static JsonObject latest = new JsonObject();
     private static boolean openRequested;
     private static int awaitingOpen;
@@ -25,8 +27,20 @@ public final class MarketUiClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "open"), (client, handler, buf, response) -> {
             String json = buf.readString(262144);
             client.execute(() -> {
-                try { latest = JsonParser.parseString(json).getAsJsonObject(); awaitingOpen = 0; client.setScreen(new MarketScreen(latest)); }
+                try { latest = JsonParser.parseString(json).getAsJsonObject(); awaitingOpen = 0; open(client); }
                 catch (RuntimeException ignored) { }
+            });
+        });
+        ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "catalog"), (client, handler, buf, response) -> {
+            String json = buf.readString(262144);
+            client.execute(() -> {
+                try {
+                    var snapshot = catalogPages.accept(JsonParser.parseString(json).getAsJsonObject());
+                    if (snapshot != null) {
+                        latestCatalog = snapshot;
+                        if (client.currentScreen instanceof MarketScreen screen) screen.catalog(snapshot.currency(), snapshot.items());
+                    }
+                } catch (RuntimeException ignored) { }
             });
         });
         LandConfirmScreen.register();
@@ -36,7 +50,7 @@ public final class MarketUiClient implements ClientModInitializer {
                 try {
                     latest = JsonParser.parseString(json).getAsJsonObject();
                     if (client.currentScreen instanceof MarketScreen screen) screen.update(latest);
-                    else if (awaitingOpen > 0) client.setScreen(new MarketScreen(latest));
+                    else if (awaitingOpen > 0) open(client);
                     awaitingOpen = 0;
                 } catch (RuntimeException ignored) { }
             });
@@ -52,6 +66,8 @@ public final class MarketUiClient implements ClientModInitializer {
         });
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             latest = new JsonObject();
+            latestCatalog = null;
+            catalogPages = new CatalogPages();
             openRequested = false;
             awaitingOpen = 0;
         });
@@ -75,6 +91,14 @@ public final class MarketUiClient implements ClientModInitializer {
             return 1;
         })));
     }
+    private static void open(MinecraftClient client) {
+        var screen = new MarketScreen(latest);
+        client.setScreen(screen);
+        if (latestCatalog != null) screen.catalog(latestCatalog.currency(), latestCatalog.items());
+        String currency = MarketScreen.text(latest, "defaultCurrency");
+        catalog(currency.isBlank() ? "note" : currency);
+    }
+    static boolean catalog(String currency) { return action("catalog " + currency); }
     private static void inform(MinecraftClient client, String message) {
         if (client.player != null) client.player.sendMessage(Text.literal(message), false);
     }
