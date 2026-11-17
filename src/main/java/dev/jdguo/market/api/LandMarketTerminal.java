@@ -119,6 +119,8 @@ public final class LandMarketTerminal {
             } else if (!"get".equals(action)) throw new IllegalArgumentException("未知管理操作");
             out.addProperty("ok", true); out.addProperty("reason", "只影响未来无主地块出售，不修改已有挂牌");
             out.addProperty("enabled", settings.enabled); out.addProperty("price", settings.price.toString());
+            out.addProperty("recommendedPrice", InitialLandSettings.DEFAULT_PRICE.toString());
+            out.addProperty("recommendedCurrency", "note");
             out.addProperty("currency", settings.currency); out.addProperty("currencyName", currencyName(settings.currency)); out.addProperty("revision", Long.toString(settings.revision));
             JsonArray currencies = new JsonArray(); for (var o : MarketCurrencies.landOptions()) { JsonObject row = new JsonObject(); row.addProperty("id", o.id()); row.addProperty("label", o.label()); currencies.add(row); } out.add("currencies", currencies);
         } catch (RuntimeException error) { out.addProperty("ok", false); out.addProperty("reason", "设置未保存：请检查价格、币种和请求格式"); }

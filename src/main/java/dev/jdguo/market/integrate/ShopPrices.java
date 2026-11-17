@@ -14,6 +14,8 @@ import java.util.List;
  * prices working.
  */
 public final class ShopPrices {
+    private static volatile Method categoryMethod;
+    private static volatile boolean categoryLookedUp;
     private static volatile Method shopMethod;
     private static volatile Method sidedMethod;
     private static volatile boolean sidedLookedUp;
@@ -68,7 +70,22 @@ public final class ShopPrices {
         }
     }
 
+    /** Optional metadata API: the shop owns categorization of its configured products. */
+    public static String categoryId(String itemId) {
+        try {
+            if (!categoryLookedUp) {
+                categoryLookedUp = true;
+                categoryMethod = Class.forName(ShopPriceApi.SHOP_CLASS).getMethod("categoryId", String.class);
+            }
+            if (categoryMethod == null) return "";
+            Object result = categoryMethod.invoke(null, itemId);
+            return result instanceof String category ? category : "";
+        } catch (ReflectiveOperationException | RuntimeException unavailable) { return ""; }
+    }
+
     public static void resetForTests() {
+        categoryLookedUp = false;
+        categoryMethod = null;
         shopLookedUp = false;
         sidedLookedUp = false;
         sidedMethod = null;

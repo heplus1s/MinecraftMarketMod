@@ -56,13 +56,40 @@ public final class MarketScreen extends Screen {
     private boolean editing(){return focused(filterField)||focused(priceField)||focused(countField)||focused(buyField)||focused(percentField);}
     private static boolean focused(TextFieldWidget field){return field!=null&&field.isFocused();}
     private void listingPane(){var b=layout.listings();filterField=field(b.x()+5,b.y()+21,b.width()-10,filter,"搜索名称或物品 ID",64);
-        button(categoryLabel(category),b.x()+5,b.y()+43,b.width()-10,()->{capture();List<String> cats=new ArrayList<>();cats.add("全部");for(var r:products()){String cat=text(r,"category");if(!cat.isBlank()&&!cats.contains(cat))cats.add(cat);}category=cats.get((Math.max(0,cats.indexOf(category))+1)%cats.size());page=0;rebuild();});
+        button("分类："+categoryLabel(category),b.x()+5,b.y()+43,b.width()-10,()->{capture();client.setScreen(new CategoryScreen(this));});
         button(mine?"我的挂牌品种":"全部品种",b.x()+5,b.y()+65,b.width()-10,()->{capture();mine=!mine;page=0;rebuild();});
         int capacity=listCapacity();page=Math.min(page,Math.max(0,(rows.size()-1)/capacity));
         for(int i=0;i<capacity&&page*capacity+i<rows.size();i++){var r=rows.get(page*capacity+i);button((selectedItem.equals(key(r))?"› ":"")+name(r),b.x()+5,b.y()+88+i*32,b.width()-10,()->selectProduct(r));}
         int y=b.y()+b.height()-23;button("‹",b.x()+5,y,23,()->{capture();page=Math.max(0,page-1);rebuild();});button("搜索",b.x()+31,y,b.width()-62,()->{capture();page=0;rebuild();});button("›",b.x()+b.width()-28,y,23,()->{capture();page++;rebuild();});
     }
-    private String categoryLabel(String key){return switch(key){case "land" -> "领地";case "blocks" -> "方块";case "tools" -> "工具";case "weapons" -> "武器";case "armor" -> "盔甲";case "food" -> "食物";case "other" -> "其他物品";default -> key;};}
+    private String categoryLabel(String key){return MarketCategories.label(key);}
+    /** Direct category selection instead of cycling through every category. */
+    private final class CategoryScreen extends Screen {
+        private final Screen parent;
+        private int categoryPage;
+        private CategoryScreen(Screen parent){super(Text.literal("商品分类"));this.parent=parent;}
+        @Override protected void init(){
+            List<String> available=new ArrayList<>();available.add("全部");
+            for(String id:MarketCategories.ORDER)if(!"全部".equals(id)&&products().stream().anyMatch(r->id.equals(text(r,"category"))))available.add(id);
+            for(var r:products()){String id=text(r,"category");if(!id.isBlank()&&!available.contains(id))available.add(id);}
+            int columns=width>=360?3:2, gap=6, cell=Math.min(140,(width-24-gap*(columns-1))/columns);
+            int rows=Math.max(1,(height-110)/26),capacity=columns*rows;
+            categoryPage=Math.min(categoryPage,Math.max(0,(available.size()-1)/capacity));
+            int left=(width-(cell*columns+gap*(columns-1)))/2;
+            for(int n=0;n<capacity&&categoryPage*capacity+n<available.size();n++){
+                String id=available.get(categoryPage*capacity+n);
+                addDrawableChild(ButtonWidget.builder(Text.literal((category.equals(id)?"› ":"")+categoryLabel(id)),button->{category=id;page=0;confirming=false;client.setScreen(parent);}).dimensions(left+(n%columns)*(cell+gap),40+(n/columns)*26,cell,20).build());
+            }
+            if(available.size()>capacity){
+                var prev=addDrawableChild(ButtonWidget.builder(Text.literal("上一页"),button->{categoryPage--;clearChildren();init();}).dimensions(left,height-62,cell,20).build());prev.active=categoryPage>0;
+                var next=addDrawableChild(ButtonWidget.builder(Text.literal("下一页"),button->{categoryPage++;clearChildren();init();}).dimensions(left+cell+gap,height-62,cell,20).build());next.active=(categoryPage+1)*capacity<available.size();
+            }
+            addDrawableChild(ButtonWidget.builder(Text.literal("返回市场"),button->close()).dimensions(left,height-32,cell*columns+gap*(columns-1),20).build());
+        }
+        @Override public void close(){client.setScreen(parent);}
+        @Override public void render(DrawContext c,int x,int y,float delta){renderBackground(c);c.drawCenteredTextWithShadow(textRenderer,title,width/2,16,0xffffff);super.render(c,x,y,delta);}
+    }
+
     private int listCapacity(){return Math.max(1,(layout.listings().height()-118)/32);}
     private void selectProduct(JsonObject row){capture();selectedItem=key(row);if(landMode){currency=text(row,"currency");MarketUiClient.catalog(currency);}selectedOffer="";buyCount="1";confirming=false;bookPage=0;rebuild();}
     private void selectOffer(JsonObject row){capture();selectedItem=key(row);selectedOffer=text(row,"id");buyCount="1";confirming=false;rebuild();}

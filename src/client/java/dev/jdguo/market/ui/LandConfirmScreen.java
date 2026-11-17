@@ -82,6 +82,12 @@ public final class LandConfirmScreen extends Screen {
         if (label.isBlank() || label.equals(currency)) label = currency.startsWith("personal:") ? "个人币（名称暂不可用）" : currency;
         return label + (currency.startsWith("personal:") ? "（个人币）" : currency.equals("note") ? "（央行）" : "");
     }
+    private String centralLabel() {
+        if(data.has("currencies")) for(var row:data.getAsJsonArray("currencies")) {
+            if("note".equals(text(row.getAsJsonObject(),"id"))) return text(row.getAsJsonObject(),"label");
+        }
+        return "央行券";
+    }
     private static String text(JsonObject data, String key) { try { return data.has(key) ? data.get(key).getAsString() : ""; } catch (RuntimeException bad) { return ""; } }
     private boolean send(JsonObject input) {
         if (!ClientPlayNetworking.canSend(LandUiChannel.ACTION)) return false;
@@ -101,11 +107,11 @@ public final class LandConfirmScreen extends Screen {
         if (crossPayment()) {
             JsonObject payment = data.has("payment") ? data.getAsJsonObject("payment") : new JsonObject();
             String preview = payment.has("success") && payment.get("success").getAsBoolean()
-                    ? "扣款：" + text(payment, "quantity") + " " + currencyLabel() + "；补齐 " + text(payment, "noteTopup") + " 央行券"
+                    ? "扣款：" + text(payment, "quantity") + " " + currencyLabel() + PaymentDisplay.extra(text(payment, "noteTopup"), centralLabel())
                     : "当前币种无法报价，未执行付款";
             context.drawTextWrapped(textRenderer, Text.literal(preview), x, top + 128, w, 0xFFE080);
         }
-        String help = selling ? "仅登记选中范围；成交时重新核验所有权。" : crossPayment() ? "实物按整数支付，尾差用央行券补齐。报价变化不会自动扣款。" : "私人挂牌按卖家币种支付；整笔成交。";
+        String help = selling ? "仅登记选中范围；成交时重新核验所有权。" : crossPayment() ? (currency.startsWith("personal:") ? "个人币按小数金额付款，不额外补央行券。报价变化须重新确认。" : "实物按整数付款，必要尾差以央行券补齐；券类按小数付款。") : "私人挂牌按卖家币种支付；整笔成交。";
         context.drawTextWrapped(textRenderer, Text.literal(help), x, top + 158, w, 0xBBBBBB);
         context.drawTextWrapped(textRenderer, Text.literal(message), x, top + 214, w, 0xFFE080);
         super.render(context, mouseX, mouseY, delta);
