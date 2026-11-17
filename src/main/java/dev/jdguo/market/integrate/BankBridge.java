@@ -20,6 +20,12 @@ import java.util.UUID;
 public final class BankBridge {
     private static final Payments PAYMENTS = new Payments() {
         @Override
+        public boolean requiresFinalization(String currency) {
+            if (currency.startsWith("personal:")) return true;
+            try { Class.forName(BankHookSpec.BANK_CLASS).getMethod("quoteLandPurchase", String.class, BigInteger.class, String.class); return true; }
+            catch (ReflectiveOperationException missing) { return false; }
+        }
+        @Override
         public SettlementResult finalizePayment(String reference) {
             // Custom installed hooks predate clearing locks and retain their no-op contract.
             if (LandGrantAccount.installed() != null) return SettlementResult.ok();
@@ -84,6 +90,29 @@ public final class BankBridge {
 
     public static Payments payments() {
         return PAYMENTS;
+    }
+
+    public static com.google.gson.JsonObject landQuote(String denomination, BigInteger total, String tender) {
+        try {
+            Class<?> type = Class.forName(BankHookSpec.BANK_CLASS);
+            String json = (String) type.getMethod("quoteLandPurchase", String.class, BigInteger.class, String.class).invoke(null, denomination, total, tender);
+            return com.google.gson.JsonParser.parseString(json).getAsJsonObject();
+        } catch (ReflectiveOperationException | RuntimeException unavailable) { return new com.google.gson.JsonObject(); }
+    }
+    /** Only the initial-grant charge changes. Recovery/refund still uses the original durable bank receipt. */
+    public static Payments landPayments(String tender, String fingerprint) {
+        return new Payments() {
+            public boolean requiresFinalization(String c) { return true; }
+            public SettlementResult receipt(String r) { return PAYMENTS.receipt(r); }
+            public SettlementResult finalizePayment(String r) { return PAYMENTS.finalizePayment(r); }
+            public SettlementResult paySeller(UUID a, UUID b, String c, BigInteger n, String r) { return PAYMENTS.paySeller(a,b,c,n,r); }
+            public SettlementResult payLandGrant(UUID a, String c, BigInteger n, String r) {
+                return reflect("creditLandGrantQuoted", new Class<?>[]{UUID.class,String.class,BigInteger.class,String.class,String.class,String.class},
+                        new Object[]{a,c,n,tender,fingerprint,r}, "land_quote_missing");
+            }
+            public SettlementResult refundSeller(UUID a, UUID b, String c, BigInteger n, String r) { return PAYMENTS.refundSeller(a,b,c,n,r); }
+            public SettlementResult refundLandGrant(UUID a, String c, BigInteger n, String r) { return PAYMENTS.refundLandGrant(a,c,n,r); }
+        };
     }
 
     public static SettlementResult personalOffers(UUID player, String name) {

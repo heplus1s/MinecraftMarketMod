@@ -164,7 +164,7 @@ public final class Checkout {
     private static boolean finalizeDelivered(Deal deal, Payments payments) {
         // Only personal-currency system payments reserve a recursive collateral chain.
         // Player transfers and direct currency grants need no finalizer (old bank API stays compatible).
-        if (deal.proceeds() != Proceeds.LAND_GRANT || !deal.currency().startsWith("personal:")) return true;
+        if (deal.proceeds() != Proceeds.LAND_GRANT || !payments.requiresFinalization(deal.currency())) return true;
         try {
             SettlementResult result = payments.finalizePayment(deal.reference());
             return result != null && result.success();

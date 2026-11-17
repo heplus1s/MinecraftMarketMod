@@ -15,6 +15,7 @@ class ItemVariantsTest {
         assertEquals(ItemVariants.key(stack(1, 7)), ItemVariants.key(stack(100, 7)));
         assertNotEquals(ItemVariants.key(stack(1, 7)), ItemVariants.key(stack(1, 8)));
         assertEquals("default", ItemVariants.key(new NbtCompound()));
+        assertEquals("default", ItemVariants.key(stack(1,0)));
     }
     @Test void customNamesEnchantmentsAndTypedTagsStaySeparate() {
         NbtCompound original = stack(1, 0), named = original.copy(), enchanted = original.copy();
