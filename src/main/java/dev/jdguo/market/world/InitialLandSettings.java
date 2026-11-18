@@ -12,6 +12,9 @@ public final class InitialLandSettings extends PersistentState {
     public BigInteger price = DEFAULT_PRICE;
     public String currency = "note";
     public long revision;
+    public boolean dynamicEnabled; // Existing worlds retain static pricing until explicitly enabled.
+    public int radius = 8, ownerBps = 500, listingBps = 100, saleBps = 300, decayHours = 168, listingMaxPercent = 120;
+
     public static InitialLandSettings get(MinecraftServer server) {
         return server.getOverworld().getPersistentStateManager().getOrCreate(InitialLandSettings::read, InitialLandSettings::new, "marketmod_initial_land");
     }
@@ -23,12 +26,25 @@ public final class InitialLandSettings extends PersistentState {
             s.currency = tag.getString("Currency");
             s.enabled = tag.getBoolean("Enabled");
             s.revision = tag.getLong("Revision");
-        } catch (RuntimeException invalid) { s.enabled = false; s.price = DEFAULT_PRICE; }
+            s.dynamicEnabled = tag.getBoolean("DynamicEnabled");
+            if (tag.contains("Radius")) {
+                s.radius = tag.getInt("Radius"); s.ownerBps = tag.getInt("OwnerBps");
+                s.listingBps = tag.getInt("ListingBps"); s.saleBps = tag.getInt("SaleBps"); s.decayHours = tag.getInt("DecayHours");
+                if (tag.contains("ListingMaxPercent")) s.listingMaxPercent = tag.getInt("ListingMaxPercent");
+                s.validateDynamic();
+            }
+        } catch (RuntimeException invalid) { s.enabled = false; s.dynamicEnabled = false; s.price = DEFAULT_PRICE; s.radius = 8; s.ownerBps = 500; s.listingBps = 100; s.saleBps = 300; s.decayHours = 168; s.listingMaxPercent = 120; }
         return s;
     }
     @Override public NbtCompound writeNbt(NbtCompound tag) {
         tag.putBoolean("Enabled", enabled); tag.putString("Price", price.toString());
-        tag.putString("Currency", currency); tag.putLong("Revision", revision); return tag;
+        tag.putString("Currency", currency); tag.putLong("Revision", revision);
+        tag.putBoolean("DynamicEnabled", dynamicEnabled); tag.putInt("Radius", radius); tag.putInt("OwnerBps", ownerBps);
+        tag.putInt("ListingBps", listingBps); tag.putInt("SaleBps", saleBps); tag.putInt("DecayHours", decayHours); tag.putInt("ListingMaxPercent", listingMaxPercent); return tag;
+    }
+    public void validateDynamic() {
+        if (radius < 0 || radius > 128 || ownerBps < 0 || ownerBps > 10000 || listingBps < 0 || listingBps > 10000
+                || saleBps < 0 || saleBps > 10000 || decayHours < 1 || decayHours > 720 || listingMaxPercent < 1 || listingMaxPercent > 10000) throw new IllegalArgumentException("dynamic settings");
     }
     public void save(MinecraftServer server) { markDirty(); DurableMarketState.save(server, "marketmod_initial_land", this); }
 }

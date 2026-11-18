@@ -58,6 +58,13 @@ public final class LandBridge {
         }
     }
 
+    public static int[] nearbyOwnerCounts(MinecraftServer server, List<ChunkRef> chunks, int radius) {
+        Object result = call("nearbyOwnerCounts", new Class<?>[]{MinecraftServer.class, String.class, int[].class, int.class},
+                server, chunks.get(0).dimension(), coordinates(chunks), radius);
+        if (!(result instanceof int[] counts) || counts.length != chunks.size()) throw new IllegalStateException("dynamic land pricing requires updated landmod");
+        return counts;
+    }
+
     public static LandView at(MinecraftServer server, String dimension, int chunkX, int chunkZ) {
         Object info = call("parcelAt", new Class<?>[]{MinecraftServer.class, String.class, int.class, int.class}, server, dimension, chunkX, chunkZ);
         return view(info);

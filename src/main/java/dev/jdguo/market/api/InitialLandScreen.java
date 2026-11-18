@@ -25,6 +25,14 @@ final class InitialLandScreen extends GenericContainerScreenHandler {
         this.viewer = viewer; this.dimension = dimension; this.coordinates = coordinates.clone(); this.quote = quote.deepCopy();
         icon(menu, 4, new ItemStack(Items.GRASS_BLOCK), "购买 " + quote.get("chunks").getAsInt() + " 区块 · " + dimension);
         icon(menu, 13, new ItemStack(Items.PAPER), "总价 " + quote.get("total").getAsString() + " " + quote.get("currencyName").getAsString());
+        if (quote.has("pricingDetail")) {
+            ItemStack detail = new ItemStack(Items.BOOK); detail.setCustomName(Text.literal("地价组成（悬停查看）"));
+            var lore = new net.minecraft.nbt.NbtList();
+            for (String line : new String[]{quote.get("pricingDetail").getAsString(), "范围内每块最大业主人数：" + quote.get("nearbyOwnersMax"),
+                    "范围内每块最大挂牌人数：" + quote.get("listedSellersMax"), "范围内每块最大成交权重：" + quote.get("saleWeightBpsMax") + "/10000"})
+                lore.add(net.minecraft.nbt.NbtString.of(Text.Serializer.toJson(Text.literal(line))));
+            detail.getOrCreateSubNbt("display").put("Lore", lore); menu.setStack(22, detail);
+        }
         icon(menu, 11, new ItemStack(Items.EMERALD), "确认购买 · 银行储蓄扣款");
         icon(menu, 15, new ItemStack(Items.BARRIER), "取消 · 不扣款");
     }
