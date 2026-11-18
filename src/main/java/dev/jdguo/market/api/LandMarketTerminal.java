@@ -69,7 +69,7 @@ public final class LandMarketTerminal {
             JsonObject out = denied("");
             if (found != null) {
                 if (empty) return denied("不能混合购买挂牌土地与未占用土地");
-                out.addProperty("kind", "listing"); out.addProperty("listingId", found.id().toString());
+                out.addProperty("kind", "listing"); out.addProperty("scopeKind", found.kind().token()); out.addProperty("listingId", found.id().toString());
                 out.addProperty("revision", Long.toString(found.createdAt()));
                 out.addProperty("total", found.customTotal().toString());
                 out.addProperty("currency", found.currency()); out.addProperty("currencyName", currencyName(found.currency()));
@@ -79,7 +79,7 @@ public final class LandMarketTerminal {
                 return out;
             }
             InitialLandSettings settings = InitialLandSettings.get(server);
-            out.addProperty("kind", "initial"); out.addProperty("revision", Long.toString(settings.revision));
+            out.addProperty("kind", "initial"); out.addProperty("scopeKind", "chunks"); out.addProperty("revision", Long.toString(settings.revision));
             JsonObject pricing = LandPriceQuote.estimate(server, selected);
             for (var entry : pricing.entrySet()) out.add(entry.getKey(), entry.getValue());
             out.addProperty("currency", settings.currency); out.addProperty("currencyName", currencyName(settings.currency));
@@ -188,7 +188,7 @@ public final class LandMarketTerminal {
             JsonObject form;
             try { form = LandPriceQuote.estimate(player.getServer(), chunks); }
             catch (RuntimeException unavailable) { player.sendMessage(Text.literal("无法计算推荐地价，请管理员核对市场与领地版本。"), false); return; }
-            form.addProperty("chunks", chunks.size()); form.addProperty("currencyName", currencyName(form.get("currency").getAsString()));
+            form.addProperty("chunks", chunks.size()); form.addProperty("scopeKind", land.same(chunks) ? "parcel" : "chunks"); form.addProperty("currencyName", currencyName(form.get("currency").getAsString()));
             form.addProperty("recommendedTotal", form.get("total").getAsString());
             form.addProperty("recommendedCurrency", form.get("currency").getAsString());
             form.addProperty("recommendedCurrencyName", form.get("currencyName").getAsString());

@@ -104,7 +104,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
             Listing listing = listings.get(i); shown.add(listing.id());
             ListingView view = desk().view(listing, listing.priceMode() == PriceMode.SHOP
                     ? ShopPrices.quote(listing) : null);
-            String title = listing.kind() == ListingKind.ITEM ? listing.itemId() + " × " + listing.count() : view.parcelName();
+            String title = listing.kind() == ListingKind.ITEM ? listing.itemId() + " × " + listing.count() : LandScopeLabels.label(listing.kind().token(), listing.chunks().size()) + " · " + view.parcelName();
             icon(i - page * 36, listing.kind() == ListingKind.ITEM ? Items.CHEST : Items.GRASS_BLOCK,
                     title, "编号 " + listing.shortId(), "卖方 " + listing.sellerName(),
                     "整单 " + (view.totalPrice().isBlank() ? "暂无报价" : view.totalPrice()) + " " + MarketMessages.currency(view.currency()),
@@ -121,9 +121,9 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
                 icon(39, Items.GLOWSTONE_DUST, "买入数量 +1", "当前 " + purchaseCount);
                 icon(41, Items.CHEST, "买入数量 +64", "最多 " + current.count());
             }
-            icon(38, Items.PAPER, "已选 " + current.shortId(), "卖方 " + current.sellerName(), "整单 " + view.totalPrice() + " " + MarketMessages.currency(current.currency()), "选择购买 " + (current.kind() == ListingKind.ITEM ? purchaseCount + " 件" : "整笔领地"));
+            icon(38, Items.PAPER, "已选 " + current.shortId(), "卖方 " + current.sellerName(), "整单 " + view.totalPrice() + " " + MarketMessages.currency(current.currency()), "选择购买 " + (current.kind() == ListingKind.ITEM ? purchaseCount + " 件" : LandScopeLabels.label(current.kind().token(), current.chunks().size())));
             if (current.seller().equals(viewer.getUuid())) icon(42, Items.BARRIER, "确认撤销自己的挂牌", "托管物品退回背包或待领取记录");
-            else icon(40, Items.EMERALD, "确认购买 " + (current.kind() == ListingKind.ITEM ? purchaseCount + " 件" : "整笔领地"), "从银行扣除指定货币，不自动换汇", "币种 " + MarketMessages.currency(current.currency()), current.priceMode() == PriceMode.SHOP ? "浮动报价将在点击时重新读取" : "本次合计 " + displayedTotal);
+            else icon(40, Items.EMERALD, "确认购买 " + (current.kind() == ListingKind.ITEM ? purchaseCount + " 件" : LandScopeLabels.label(current.kind().token(), current.chunks().size())), "从银行扣除指定货币，不自动换汇", "币种 " + MarketMessages.currency(current.currency()), current.priceMode() == PriceMode.SHOP ? "浮动报价将在点击时重新读取" : "本次合计 " + displayedTotal);
         } else icon(38, Items.PAPER, "选择挂牌查看详情", "没有买单簿：本页为卖方挂牌，不是虚构的买卖深度");
         icon(45, Items.ARROW, "上一页"); icon(46, Items.ARROW, "下一页");
         icon(47, Items.PLAYER_HEAD, mine ? "我的挂牌 · 点击查看全部" : "全部挂牌 · 点击查看我的");
