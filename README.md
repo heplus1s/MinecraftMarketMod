@@ -1,6 +1,6 @@
 # MinecraftMarketMod
 
-面向 **Minecraft Java 1.20.1 / Fabric** 的商品、个人币和土地交易市场。本文对应 **v1.0.10**。
+面向 **Minecraft Java 1.20.1 / Fabric** 的商品、个人币和土地交易市场。本文对应 **v1.0.12**。
 
 市场提供行情目录、玩家挂牌、托管与交付，以及银行、商店、领地的联动入口。它不是无限资金的系统买家，也不是自动连续撮合的证券交易所：**目录不等于库存，参考价不等于已成交价格，个人币不等于股票。**
 
@@ -12,7 +12,7 @@
 
 运行环境：Minecraft `1.20.1`、Java `17+`、Fabric Loader `0.15.0+`、Fabric API。当前构建使用 Loader 0.16.9、Fabric API 0.92.2+1.20.1。
 
-1. 将 `marketmod-1.0.10.jar` 放入服务端 `mods`。要使用完整经济体系，同时安装配套银行、商店、领地。
+1. 将 `marketmod-1.0.12.jar` 放入服务端 `mods`。要使用完整经济体系，同时安装配套银行、商店、领地。
 2. 客户端可以不安装本模组，通过原版命令、箱子交易终端使用核心功能；安装同一个主模组 JAR 和其依赖可启用图形交易界面。
 3. 升级前停服并整体备份世界、银行数据及配置。删除旧版同名模组，不要留下两个版本。
 4. 删除旧独立 `marketmod-ui` JAR。主模组已内置客户端界面，同时安装会由 Loader 拒绝，防止重复注册。
@@ -273,7 +273,7 @@ OP 准星对准五格内实心底座，底座上方两格留空：
 .\gradlew.bat build
 ```
 
-生成文件：`build/libs/marketmod-1.0.10.jar`，不包含银行、商店或领地。开发入口主要位于：
+生成文件：`build/libs/marketmod-1.0.12.jar`，不包含银行、商店或领地。开发入口主要位于：
 
 - `MarketDesk` / `MarketBook` / `Checkout`：挂牌、拆分、托管和交易阶段。
 - `MarketSync` / `PersonalMarketChannel` / `SystemShopChannel`：可选客户端及报价确认。
