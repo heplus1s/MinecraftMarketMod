@@ -42,6 +42,8 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
     private BigInteger displayedTotal;
     private int sellKind; // 0 held item, 1 parcel, 2 current chunk
     private long price = 1;
+    private String landRecommendation = "";
+    private boolean landPriceConfirmedCurrency = true;
     private int count = 1;
     private int purchaseCount = 1;
     private String currency = MarketConfig.get().currency();
@@ -67,6 +69,17 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
             screen.selling = sell;
             screen.sellKind = 1;
             screen.selected = listing;
+            if (sell) {
+                try {
+                    var quote = dev.jdguo.market.api.LandPriceQuote.estimate(player.getServer(), chunks);
+                    screen.price = new BigInteger(quote.get("total").getAsString()).longValueExact();
+                    screen.currency = quote.get("currency").getAsString();
+                    screen.landRecommendation = "推荐总价 " + screen.price + " " + MarketMessages.currency(screen.currency);
+                } catch (RuntimeException unavailable) {
+                    player.sendMessage(Text.literal("推荐价无法用于当前挂牌输入，请使用命令手动指定价格；未挂牌。"), false);
+                    screen.selling = false;
+                }
+            }
             screen.renderMenu();
             return screen;
         }, Text.literal("土地市场 · 银行结算")));
@@ -131,6 +144,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
             icon(4, Items.GRASS_BLOCK, "目标宗地 " + landTarget, landChunks.isEmpty() ? "整宗地挂牌" : "选中 " + landChunks.size() + " 个区块");
             icon(6, Items.GRASS_BLOCK, "地图选区 · 已锁定", "最终确认时再次检查所有权和区块");
         }
+        if (landTarget != null) icon(8, Items.BOOK, "推荐价（卖家可调整）", landRecommendation, "更换币种后请调整售价再确认");
         icon(11, Items.REDSTONE, "数量 -1"); icon(13, Items.PAPER, "挂牌数量 " + count); icon(15, Items.GLOWSTONE_DUST, "数量 +1");
         icon(20, Items.REDSTONE, "单价 -1"); icon(21, Items.REDSTONE, "单价 -10"); icon(22, Items.PAPER, "单价 " + price + " · 正整数"); icon(23, Items.GLOWSTONE_DUST, "单价 +10"); icon(24, Items.GLOWSTONE_DUST, "单价 +1");
         icon(29, Items.REDSTONE, "单价 -100"); icon(33, Items.GLOWSTONE_DUST, "单价 +100");
@@ -143,8 +157,22 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         if (player != viewer || action != SlotActionType.PICKUP || button != 0 || slot < 0 || slot >= 54) return;
         if (slot == 53) { viewer.closeHandledScreen(); return; }
         if (selling) {
+            if (slot == 20 || slot == 21 || slot == 29 || slot == 24 || slot == 23 || slot == 33) landPriceConfirmedCurrency = true;
             switch (slot) {
-                case 6 -> { if (landTarget == null) sellKind = (sellKind + 1) % 3; }
+                case 6 -> {
+                    if (landTarget == null) {
+                        sellKind = (sellKind + 1) % 3;
+                        if (sellKind != 0) {
+                            var pos = viewer.getChunkPos(); String dim = viewer.getWorld().getRegistryKey().getValue().toString();
+                            var land = dev.jdguo.market.integrate.LandBridge.at(viewer.getServer(), dim, pos.x, pos.z);
+                            if (land == null || !land.owner().equals(viewer.getUuid())) { viewer.sendMessage(Text.literal("请站在自己的领地内再打开出售。"), false); sellKind = 0; }
+                            else {
+                                dev.jdguo.market.api.LandMarketTerminal.open(viewer, land.id(), "sell", dim,
+                                        sellKind == 1 ? dev.jdguo.market.integrate.LandBridge.coordinates(land.chunks()) : new int[]{pos.x,pos.z}); return;
+                            }
+                        }
+                    }
+                }
                 case 11 -> count = Math.max(1, count - 1);
                 case 15 -> count = Math.min(9999, count + 1);
                 case 20 -> price = Math.max(1, price - 1);
@@ -154,10 +182,12 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
                 case 23 -> price = price > Long.MAX_VALUE - 10 ? Long.MAX_VALUE : price + 10;
                 case 33 -> price = price > Long.MAX_VALUE - 100 ? Long.MAX_VALUE : price + 100;
                 case 31 -> {
+                    if (landTarget != null) landPriceConfirmedCurrency = false;
                     var options = MarketCurrencies.options();
                     for (int i = 0; i < options.size(); i++) if (options.get(i).id().equals(currency)) { currency = options.get((i + 1) % options.size()).id(); break; }
                 }
                 case 40 -> {
+                    if (landTarget != null && !landPriceConfirmedCurrency) { viewer.sendMessage(Text.literal("切换币种后请先调整售价，推荐价不会自动换算。"), false); break; }
                     MarketReply reply = landTarget != null ? desk().listSelectedLand(viewer, landTarget, landChunks, price, currency) : switch (sellKind) {
                         case 1 -> desk().listParcel(viewer, price, false, currency);
                         case 2 -> desk().listChunk(viewer, price, false, currency);

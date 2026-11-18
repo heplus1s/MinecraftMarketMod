@@ -48,6 +48,16 @@ public final class LandUiChannel {
                         if (!MarketCurrencies.acceptsLand(currency)) throw new IllegalArgumentException();
                         long price = Long.parseLong(input.get("price").getAsString());
                         if (price <= 0) throw new IllegalArgumentException();
+                        if (!currency.equals(p.quote().get("currency").getAsString())) {
+                            // Older enhanced clients do not clear the recommendation on currency changes.
+                            // Require a fresh server-rendered confirmation in the final denomination.
+                            JsonObject reconfirm = p.quote().deepCopy();
+                            reconfirm.addProperty("currency", currency); reconfirm.addProperty("total", Long.toString(price));
+                            reconfirm.addProperty("currencyName", MarketCurrencies.landOptions().stream().filter(o -> o.id().equals(currency)).map(MarketCurrencies.Option::label).findFirst().orElse(currency));
+                            reconfirm.addProperty("reason", "币种已更改，请核对新币种下的总售价，再次确认挂牌");
+                            open(player, "sell", p.parcel(), p.dimension(), p.coordinates(), reconfirm);
+                            result(player, "币种已更改，尚未挂牌。请核对售价后再次确认。", false); return;
+                        }
                         List<ChunkRef> chunks = new ArrayList<>();
                         for (int i = 0; i < p.coordinates().length; i += 2) chunks.add(new ChunkRef(p.dimension(), p.coordinates()[i], p.coordinates()[i + 1]));
                         var reply = MarketDesk.get(server).listSelectedLand(player, p.parcel(), chunks, price, currency);

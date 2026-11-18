@@ -27,7 +27,7 @@ public final class MarketBook {
     public static final int VERSION = 1;
     public static final int TRADE_LIMIT = 2000;
 
-    private static final Set<String> ROOT_KEYS = Set.of("version", "listings", "trades", "pending", "deals", "pendingDeliveryLocks");
+    private static final Set<String> ROOT_KEYS = Set.of("version", "listings", "trades", "pending", "deals", "pendingDeliveryLocks", "landSaleSignals");
 
     private final Map<UUID, Listing> listings = new LinkedHashMap<>();
     private final Map<UUID, Deal> deals = new LinkedHashMap<>();
@@ -38,6 +38,12 @@ public final class MarketBook {
     private final List<NbtCompound> preservedDeals = new ArrayList<>();
     private NbtCompound extra = new NbtCompound();
     private NbtCompound pendingDeliveryLocks = new NbtCompound();
+    private final LandSaleSignals landSaleSignals = new LandSaleSignals();
+    public List<LandSaleSignals.Signal> landSaleSignals() { return landSaleSignals.all(); }
+    private void recordLandSale(Listing listing, long now) {
+        if (listing == null || listing.kind() == ListingKind.ITEM || listing.initialGrant() || listing.proceeds() != Proceeds.SELLER) return;
+        landSaleSignals.record(listing.chunks(), listing.seller(), now);
+    }
 
     public int size() {
         return listings.size();
@@ -189,6 +195,7 @@ public final class MarketBook {
         if (pendingItem != null && !pendingItem.isEmpty()) {
             pending.add(new PendingItem(deal.buyer(), pendingItem.copy(), System.currentTimeMillis()));
         }
+        recordLandSale(listing, System.currentTimeMillis());
         trades.add(trade(deal, listing));
         trimTrades();
     }
@@ -248,6 +255,12 @@ public final class MarketBook {
 
     public NbtCompound write() {
         NbtCompound nbt = extra.copy();
+        NbtList signals = new NbtList();
+        for (var signal : landSaleSignals.all()) {
+            NbtCompound row = new NbtCompound(); row.putString("Dimension", signal.chunk().dimension());
+            row.putInt("X", signal.chunk().x()); row.putInt("Z", signal.chunk().z()); row.putUuid("Seller", signal.seller()); row.putLong("Time", signal.time()); signals.add(row);
+        }
+        nbt.put("landSaleSignals", signals);
         nbt.putInt("version", VERSION);
         nbt.put("pendingDeliveryLocks", pendingDeliveryLocks.copy());
         NbtList listingList = new NbtList();
@@ -284,6 +297,14 @@ public final class MarketBook {
         }
         book.extra = unknown(nbt, ROOT_KEYS);
         book.pendingDeliveryLocks = nbt.getCompound("pendingDeliveryLocks").copy();
+        NbtList signals = nbt.getList("landSaleSignals", NbtElement.COMPOUND_TYPE);
+        for (int i = 0; i < signals.size(); i++) {
+            NbtCompound row = signals.getCompound(i);
+            if (!row.containsUuid("Seller") || row.getString("Dimension").isBlank()) continue;
+            long time = row.getLong("Time"), now = System.currentTimeMillis();
+            ChunkRef chunk = new ChunkRef(row.getString("Dimension"), row.getInt("X"), row.getInt("Z"));
+            book.landSaleSignals.restore(chunk, row.getUuid("Seller"), time, now);
+        }
         NbtList listingList = nbt.getList("listings", NbtElement.COMPOUND_TYPE);
         for (int i = 0; i < listingList.size(); i++) {
             NbtCompound tag = listingList.getCompound(i);

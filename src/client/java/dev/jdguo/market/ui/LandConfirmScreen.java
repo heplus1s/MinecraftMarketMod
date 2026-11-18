@@ -43,10 +43,15 @@ public final class LandConfirmScreen extends Screen {
         });
     }
     @Override protected void init() {
+        if (width < 280 || height < 250) {
+            addDrawableChild(ButtonWidget.builder(Text.literal("返回"), button -> close()).dimensions(8, 8, 80, 20).build()); return;
+        }
         w = Math.min(330, width - 24); x = (width - w) / 2; top = Math.max(6, (height - 236) / 2);
         String previous = price == null ? text(data, "total") : price.getText();
         price = new TextFieldWidget(textRenderer, x, top + 66, w, 20, Text.literal("整笔总价"));
-        price.setMaxLength(19); price.setText(previous); price.setEditable(selling && !submitted); addDrawableChild(price);
+        price.setMaxLength(selling ? 19 : 128);
+        if (selling && previous.length() > 19) { previous = ""; message = "推荐价超出挂牌数值范围，请手动填写有效售价"; }
+        price.setText(previous); price.setEditable(selling && !submitted); addDrawableChild(price);
         ButtonWidget currencyButton = addDrawableChild(ButtonWidget.builder(Text.literal(currencyLabel()), button -> {
             var options = data.getAsJsonArray("currencies");
             for (int i = 0; i < options.size(); i++) {
@@ -55,6 +60,7 @@ public final class LandConfirmScreen extends Screen {
                 }
             }
             button.setMessage(Text.literal(currencyLabel()));
+            if (selling) { price.setText(""); message = "已切换币种，请填写该币种售价；推荐价不自动按数值换币"; }
             if (!selling) {
                 confirm.active = false; message = "正在重新计算付款金额…";
                 JsonObject request = new JsonObject(); request.addProperty("action", "quote"); request.addProperty("token", text(data, "token")); request.addProperty("currency", currency);
@@ -103,21 +109,37 @@ public final class LandConfirmScreen extends Screen {
     }
     @Override public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         renderBackground(context);
+        if (width < 280 || height < 250) {
+            context.drawTextWithShadow(textRenderer, "请调小界面尺寸（至少280×250）", 8, 40, 0xFFFFAA);
+            super.render(context, mouseX, mouseY, delta); return;
+        }
         context.drawTextWithShadow(textRenderer, title, x, top, 0xFFFFFF);
-        context.drawTextWithShadow(textRenderer, "范围：" + text(data, "chunks") + " 个区块", x, top + 20, 0xDDDDDD);
+        context.drawTextWithShadow(textRenderer, "范围：" + text(data, "chunks") + " 个区块" + (data.has("pricingDetail") ? "（悬停看计价）" : ""), x, top + 20, 0xDDDDDD);
         context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(text(data, "dimension"), w), x, top + 34, 0xAAAAAA);
         context.drawTextWithShadow(textRenderer, selling ? "整笔挂牌总价" : "土地标价：" + text(data, "currencyName"), x, top + 54, 0xFFFFFF);
         context.drawTextWithShadow(textRenderer, selling ? "计价币种（点击切换）" : crossPayment() ? "付款币种（点击切换，重新报价）" : "付款币种（私人卖家指定）", x, top + 90, 0xFFFFFF);
+        if (selling && data.has("recommendedTotal")) {
+            String recommended = "参考总价：" + text(data, "recommendedTotal") + " " + (data.has("recommendedCurrencyName") ? text(data, "recommendedCurrencyName") : text(data, "currencyName"));
+            context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(recommended, w), x, top + 128, 0xFFE080);
+            context.drawTextWithShadow(textRenderer, "可修改；切换币种需重新填写，不自动换算", x, top + 142, 0xBBBBBB);
+        }
         if (crossPayment()) {
             JsonObject payment = data.has("payment") ? data.getAsJsonObject("payment") : new JsonObject();
             String preview = payment.has("success") && payment.get("success").getAsBoolean()
                     ? "扣款：" + text(payment, "quantity") + " " + currencyLabel() + PaymentDisplay.extra(text(payment, "noteTopup"), centralLabel())
                     : "当前币种无法报价，未执行付款";
-            context.drawTextWrapped(textRenderer, Text.literal(preview), x, top + 128, w, 0xFFE080);
+            context.drawTextWithShadow(textRenderer, textRenderer.trimToWidth(preview, w), x, top + 128, 0xFFE080);
+            if (mouseX >= x && mouseX < x + w && mouseY >= top + 128 && mouseY < top + 142)
+                context.drawTooltip(textRenderer, textRenderer.wrapLines(Text.literal(preview), Math.min(280, w)), mouseX, mouseY);
         }
         String help = selling ? "仅登记选中范围；成交时重新核验所有权。" : crossPayment() ? (currency.startsWith("personal:") ? "个人币按小数金额付款，不额外补央行券。报价变化须重新确认。" : "实物按整数付款，必要尾差以央行券补齐；券类按小数付款。") : "私人挂牌按卖家币种支付；整笔成交。";
         context.drawTextWrapped(textRenderer, Text.literal(help), x, top + 158, w, 0xBBBBBB);
         context.drawTextWrapped(textRenderer, Text.literal(message), x, top + 214, w, 0xFFE080);
         super.render(context, mouseX, mouseY, delta);
+        if (data.has("pricingDetail") && mouseX >= x && mouseX <= x + w && mouseY >= top + 20 && mouseY < top + 34) {
+            String detail = text(data, "pricingDetail") + "；所选范围每块最大：附近业主 " + text(data, "nearbyOwnersMax")
+                    + "，挂牌卖家 " + text(data, "listedSellersMax") + "，成交权重 " + text(data, "saleWeightBpsMax") + "/10000";
+            context.drawTooltip(textRenderer, textRenderer.wrapLines(Text.literal(detail), Math.min(280, w)), mouseX, mouseY);
+        }
     }
 }

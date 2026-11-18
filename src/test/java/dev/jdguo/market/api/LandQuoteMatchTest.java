@@ -5,6 +5,17 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class LandQuoteMatchTest {
     private JsonObject quote() { return JsonParser.parseString("{\"buyable\":true,\"kind\":\"listing\",\"listingId\":\"a\",\"revision\":\"1\",\"total\":\"10\",\"currency\":\"note\",\"scope\":[1,2]}").getAsJsonObject(); }
+    @Test void concurrentInitialDemandOrSupplyChangeRequiresNewConfirmation() {
+        var shown = quote(); shown.addProperty("kind", "initial"); shown.addProperty("listingId", "");
+        shown.addProperty("total", "100");
+        for (String next : new String[]{"110", "99"}) {
+            var fresh = shown.deepCopy(); fresh.addProperty("total", next);
+            assertFalse(LandQuoteMatch.matches(shown, fresh));
+        }
+        var changedPolicy = shown.deepCopy(); changedPolicy.addProperty("revision", "2");
+        assertFalse(LandQuoteMatch.matches(shown, changedPolicy));
+        assertTrue(LandQuoteMatch.matches(shown, shown.deepCopy()));
+    }
     @Test void identicalQuoteAccepted() { assertTrue(LandQuoteMatch.matches(quote(), quote())); }
     @Test void changedPriceCurrencyRevisionOrListingRejected() {
         for (String key : new String[]{"total","currency","revision","listingId","kind"}) {

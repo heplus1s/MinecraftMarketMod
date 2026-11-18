@@ -20,10 +20,21 @@ import java.util.*;
 /** Soft map API. Queries/opening never debit; every purchase uses a second server confirmation. */
 public final class LandMarketTerminal {
     private LandMarketTerminal() {}
+    private static final Map<String, Long> REQUEST_TIMES = new HashMap<>();
+    private static boolean allowRequest(UUID player, String operation) {
+        long now = System.nanoTime();
+        REQUEST_TIMES.entrySet().removeIf(e -> now - e.getValue() > 60_000_000_000L);
+        String key = player + ":" + operation;
+        Long previous = REQUEST_TIMES.get(key);
+        if (previous != null && now - previous < 500_000_000L) return false;
+        REQUEST_TIMES.put(key, now); return true;
+    }
     public static boolean initialEnabled(MinecraftServer server) {
         return server != null && server.isOnThread() && MarketConfig.get().serverLandSales() && InitialLandSettings.get(server).enabled;
     }
     public static String quote(MinecraftServer server, UUID viewer, String dimension, int[] coordinates) {
+        if (server == null || !server.isOnThread() || viewer == null) return denied("需要服务器线程").toString();
+        if (!allowRequest(viewer, "quote")) return denied("报价请求过快，请稍后刷新").toString();
         return quoteObject(server, viewer, dimension, coordinates).toString();
     }
     private static JsonObject denied(String reason) {
@@ -69,7 +80,8 @@ public final class LandMarketTerminal {
             }
             InitialLandSettings settings = InitialLandSettings.get(server);
             out.addProperty("kind", "initial"); out.addProperty("revision", Long.toString(settings.revision));
-            out.addProperty("total", settings.price.multiply(BigInteger.valueOf(selected.size())).toString());
+            JsonObject pricing = LandPriceQuote.estimate(server, selected);
+            for (var entry : pricing.entrySet()) out.add(entry.getKey(), entry.getValue());
             out.addProperty("currency", settings.currency); out.addProperty("currencyName", currencyName(settings.currency));
             scope(out, selected);
             String reason = !settings.enabled || !MarketConfig.get().serverLandSales() ? "管理员尚未启用无主地块出售" :
@@ -116,9 +128,27 @@ public final class LandMarketTerminal {
                 settings.enabled = enabled; settings.price = price; settings.currency = matching.get(0).id(); settings.revision++;
                 try { settings.save(server); }
                 catch (RuntimeException saveError) { settings.enabled = oldEnabled; settings.price = oldPrice; settings.currency = oldCurrency; settings.revision = oldRevision; settings.markDirty(); throw saveError; }
+            } else if ("setDynamic".equals(action)) {
+                InitialLandSettings proposed = new InitialLandSettings();
+                if (!request.get("dynamicEnabled").getAsJsonPrimitive().isBoolean()) throw new IllegalArgumentException();
+                proposed.dynamicEnabled = request.get("dynamicEnabled").getAsBoolean();
+                proposed.radius = exactInt(request, "radius"); proposed.ownerBps = exactInt(request, "ownerBps");
+                proposed.listingBps = exactInt(request, "listingBps"); proposed.saleBps = exactInt(request, "saleBps"); proposed.decayHours = exactInt(request, "decayHours");
+                proposed.listingMaxPercent = request.has("listingMaxPercent") ? exactInt(request, "listingMaxPercent") : settings.listingMaxPercent;
+                proposed.validateDynamic();
+                var old = settings.writeNbt(new net.minecraft.nbt.NbtCompound());
+                settings.dynamicEnabled = proposed.dynamicEnabled; settings.radius = proposed.radius; settings.ownerBps = proposed.ownerBps;
+                settings.listingBps = proposed.listingBps; settings.saleBps = proposed.saleBps; settings.decayHours = proposed.decayHours; settings.listingMaxPercent = proposed.listingMaxPercent; settings.revision++;
+                try { settings.save(server); }
+                catch (RuntimeException failure) {
+                    settings.dynamicEnabled = old.getBoolean("DynamicEnabled"); settings.radius = old.getInt("Radius"); settings.ownerBps = old.getInt("OwnerBps");
+                    settings.listingBps = old.getInt("ListingBps"); settings.saleBps = old.getInt("SaleBps"); settings.decayHours = old.getInt("DecayHours"); settings.listingMaxPercent = old.getInt("ListingMaxPercent"); settings.revision = old.getLong("Revision"); settings.markDirty(); throw failure;
+                }
             } else if (!"get".equals(action)) throw new IllegalArgumentException("未知管理操作");
             out.addProperty("ok", true); out.addProperty("reason", "只影响未来无主地块出售，不修改已有挂牌");
             out.addProperty("enabled", settings.enabled); out.addProperty("price", settings.price.toString());
+            out.addProperty("dynamicEnabled", settings.dynamicEnabled); out.addProperty("radius", settings.radius); out.addProperty("ownerBps", settings.ownerBps);
+            out.addProperty("listingBps", settings.listingBps); out.addProperty("saleBps", settings.saleBps); out.addProperty("decayHours", settings.decayHours); out.addProperty("listingMaxPercent", settings.listingMaxPercent);
             out.addProperty("recommendedPrice", InitialLandSettings.DEFAULT_PRICE.toString());
             out.addProperty("recommendedCurrency", "note");
             out.addProperty("currency", settings.currency); out.addProperty("currencyName", currencyName(settings.currency)); out.addProperty("revision", Long.toString(settings.revision));
@@ -126,8 +156,14 @@ public final class LandMarketTerminal {
         } catch (RuntimeException error) { out.addProperty("ok", false); out.addProperty("reason", "设置未保存：请检查价格、币种和请求格式"); }
         return out.toString();
     }
+    private static int exactInt(JsonObject input, String key) {
+        String raw = input.get(key).getAsString();
+        if (!raw.matches("[0-9]{1,5}")) throw new IllegalArgumentException(key);
+        return Integer.parseInt(raw);
+    }
     public static void open(ServerPlayerEntity player, UUID parcelId, String action, String dimension, int[] coordinates) {
         if (player.getServer() == null || !player.getServer().isOnThread()) return;
+        if (!allowRequest(player.getUuid(), "open")) { player.sendMessage(Text.literal("操作过快，请稍后重新打开。"), false); return; }
         // Preserve the legacy empty-selection meaning: the entire known parcel.
         if (parcelId != null && coordinates != null && coordinates.length == 0) {
             var whole = LandBridge.parcel(player.getServer(), parcelId);
@@ -149,8 +185,14 @@ public final class LandMarketTerminal {
         var listing = MarketDesk.get(player.getServer()).book().listingForParcel(parcelId);
         if (!action.equals("sell") && listing == null) { player.sendMessage(Text.literal("该领地没有市场挂牌。旧免费挂牌不会自动定价，请卖方重新挂牌。"), false); return; }
         if (action.equals("sell") && listing == null) {
-            JsonObject form = new JsonObject(); form.addProperty("chunks", chunks.size());
-            form.addProperty("currency", MarketConfig.get().currency()); form.addProperty("total", "1");
+            JsonObject form;
+            try { form = LandPriceQuote.estimate(player.getServer(), chunks); }
+            catch (RuntimeException unavailable) { player.sendMessage(Text.literal("无法计算推荐地价，请管理员核对市场与领地版本。"), false); return; }
+            form.addProperty("chunks", chunks.size()); form.addProperty("currencyName", currencyName(form.get("currency").getAsString()));
+            form.addProperty("recommendedTotal", form.get("total").getAsString());
+            form.addProperty("recommendedCurrency", form.get("currency").getAsString());
+            form.addProperty("recommendedCurrencyName", form.get("currencyName").getAsString());
+            form.addProperty("reason", "输入框为推荐总价，可修改；切换币种后请重新填写售价");
             if (LandUiChannel.open(player, "sell", parcelId, dimension, coordinates, form)) return;
         }
         MarketChestScreen.openLand(player, parcelId, chunks, action.equals("sell") && listing == null, listing == null ? null : listing.id());
@@ -162,7 +204,7 @@ public final class LandMarketTerminal {
         MinecraftServer server = player.getServer();
         JsonObject fresh = quoteObject(server, player.getUuid(), dimension, coordinates);
         if (!fresh.get("buyable").getAsBoolean() || !"initial".equals(fresh.get("kind").getAsString())) return fresh.get("reason").getAsString();
-        for (String key : List.of("revision", "total", "currency", "scope")) if (!fresh.get(key).equals(displayed.get(key))) return "价格或范围已变化，请重新打开确认";
+        if (!LandQuoteMatch.matches(displayed, fresh)) return "价格或范围已变化，请重新打开确认";
         var data = MarketSavedData.get(server);
         Listing order = Listing.initialGrant(UUID.randomUUID(), new BigInteger(fresh.get("total").getAsString()), fresh.get("currency").getAsString(), dimension, selection(dimension, coordinates));
         if (!data.book().add(order)) return "无法建立交易";

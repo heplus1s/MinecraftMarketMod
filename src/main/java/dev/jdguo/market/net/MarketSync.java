@@ -125,6 +125,13 @@ public final class MarketSync {
             PersonalMarketChannel.act(player, parts); return;
         }
         if (parts[0].equals("shopquote") || parts[0].equals("shopconfirm")) { SystemShopChannel.act(player, parts); return; }
+        if (parts[0].equals("landform")) {
+            var pos = player.getChunkPos();
+            String dimension = player.getWorld().getRegistryKey().getValue().toString();
+            var land = dev.jdguo.market.integrate.LandBridge.at(player.getServer(), dimension, pos.x, pos.z);
+            if (land == null || !land.owner().equals(player.getUuid())) { player.sendMessage(Text.literal("请站在自己拥有的领地内。"), false); return; }
+            dev.jdguo.market.api.LandMarketTerminal.open(player, land.id(), "sell", dimension, dev.jdguo.market.integrate.LandBridge.coordinates(land.chunks())); return;
+        }
         MarketDesk desk = MarketDesk.get(player.getServer());
         if ("catalog".equals(parts[0]) && parts.length == 2) {
             catalog(player, parts[1]); return;
