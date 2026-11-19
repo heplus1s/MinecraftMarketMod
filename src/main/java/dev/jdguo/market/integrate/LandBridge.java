@@ -65,6 +65,30 @@ public final class LandBridge {
         return counts;
     }
 
+    public static boolean hasDensityPricingApi() {
+        if (!available()) return false;
+        try {
+            return Class.forName("dev.jdguo.land.api.LandApi")
+                    .getMethod("nearbyOwnedChunkWeights", MinecraftServer.class, String.class, int[].class, int.class)
+                    .getReturnType() == long[].class;
+        } catch (ReflectiveOperationException unavailable) {
+            return false;
+        }
+    }
+
+    public static long[] nearbyOwnedChunkWeights(MinecraftServer server, List<ChunkRef> chunks, int radius) {
+        if (chunks.isEmpty()) return new long[0];
+        if (!hasDensityPricingApi()) throw new MissingDensityPricingApi();
+        Object result = call("nearbyOwnedChunkWeights", new Class<?>[]{MinecraftServer.class, String.class, int[].class, int.class},
+                server, chunks.get(0).dimension(), coordinates(chunks), radius);
+        if (!(result instanceof long[] weights) || weights.length != chunks.size()) throw new MissingDensityPricingApi();
+        return weights;
+    }
+
+    public static final class MissingDensityPricingApi extends IllegalStateException {
+        public MissingDensityPricingApi() { super("区块密度加价需要新版领地模组，或由管理员将区块上涨基点设为 0"); }
+    }
+
     public static LandView at(MinecraftServer server, String dimension, int chunkX, int chunkZ) {
         Object info = call("parcelAt", new Class<?>[]{MinecraftServer.class, String.class, int.class, int.class}, server, dimension, chunkX, chunkZ);
         return view(info);

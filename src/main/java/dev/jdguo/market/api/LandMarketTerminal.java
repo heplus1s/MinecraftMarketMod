@@ -80,7 +80,7 @@ public final class LandMarketTerminal {
             }
             InitialLandSettings settings = InitialLandSettings.get(server);
             out.addProperty("kind", "initial"); out.addProperty("scopeKind", "chunks"); out.addProperty("revision", Long.toString(settings.revision));
-            JsonObject pricing = LandPriceQuote.estimate(server, selected);
+            JsonObject pricing = LandPriceQuote.estimateInitial(server, selected);
             for (var entry : pricing.entrySet()) out.add(entry.getKey(), entry.getValue());
             out.addProperty("currency", settings.currency); out.addProperty("currencyName", currencyName(settings.currency));
             scope(out, selected);
@@ -92,7 +92,8 @@ public final class LandMarketTerminal {
             }
             out.addProperty("buyable", "ok".equals(reason)); out.addProperty("reason", "ok".equals(reason) ? "无主地块整批总价" : reason);
             return out;
-        } catch (RuntimeException error) { return denied("无法核验选区，请刷新或检查领地版本"); }
+        } catch (LandBridge.MissingDensityPricingApi missing) { return denied(missing.getMessage()); }
+        catch (RuntimeException error) { return denied("无法核验选区，请刷新或检查领地版本"); }
     }
     private static void scope(JsonObject out, List<ChunkRef> chunks) {
         JsonArray scope = new JsonArray(); for (ChunkRef c : chunks) { scope.add(c.x()); scope.add(c.z()); }
@@ -133,27 +134,30 @@ public final class LandMarketTerminal {
                 if (!request.get("dynamicEnabled").getAsJsonPrimitive().isBoolean()) throw new IllegalArgumentException();
                 proposed.dynamicEnabled = request.get("dynamicEnabled").getAsBoolean();
                 proposed.radius = exactInt(request, "radius"); proposed.ownerBps = exactInt(request, "ownerBps");
+                proposed.densityBps = request.has("densityBps") ? exactInt(request, "densityBps") : settings.densityBps;
+                if (proposed.dynamicEnabled && proposed.densityBps > 0 && !LandBridge.hasDensityPricingApi()) throw new LandBridge.MissingDensityPricingApi();
                 proposed.listingBps = exactInt(request, "listingBps"); proposed.saleBps = exactInt(request, "saleBps"); proposed.decayHours = exactInt(request, "decayHours");
                 proposed.listingMaxPercent = request.has("listingMaxPercent") ? exactInt(request, "listingMaxPercent") : settings.listingMaxPercent;
                 proposed.validateDynamic();
                 var old = settings.writeNbt(new net.minecraft.nbt.NbtCompound());
                 settings.dynamicEnabled = proposed.dynamicEnabled; settings.radius = proposed.radius; settings.ownerBps = proposed.ownerBps;
-                settings.listingBps = proposed.listingBps; settings.saleBps = proposed.saleBps; settings.decayHours = proposed.decayHours; settings.listingMaxPercent = proposed.listingMaxPercent; settings.revision++;
+                settings.densityBps = proposed.densityBps; settings.listingBps = proposed.listingBps; settings.saleBps = proposed.saleBps; settings.decayHours = proposed.decayHours; settings.listingMaxPercent = proposed.listingMaxPercent; settings.revision++;
                 try { settings.save(server); }
                 catch (RuntimeException failure) {
                     settings.dynamicEnabled = old.getBoolean("DynamicEnabled"); settings.radius = old.getInt("Radius"); settings.ownerBps = old.getInt("OwnerBps");
-                    settings.listingBps = old.getInt("ListingBps"); settings.saleBps = old.getInt("SaleBps"); settings.decayHours = old.getInt("DecayHours"); settings.listingMaxPercent = old.getInt("ListingMaxPercent"); settings.revision = old.getLong("Revision"); settings.markDirty(); throw failure;
+                    settings.densityBps = old.getInt("DensityBps"); settings.listingBps = old.getInt("ListingBps"); settings.saleBps = old.getInt("SaleBps"); settings.decayHours = old.getInt("DecayHours"); settings.listingMaxPercent = old.getInt("ListingMaxPercent"); settings.revision = old.getLong("Revision"); settings.markDirty(); throw failure;
                 }
             } else if (!"get".equals(action)) throw new IllegalArgumentException("未知管理操作");
             out.addProperty("ok", true); out.addProperty("reason", "只影响未来无主地块出售，不修改已有挂牌");
             out.addProperty("enabled", settings.enabled); out.addProperty("price", settings.price.toString());
             out.addProperty("dynamicEnabled", settings.dynamicEnabled); out.addProperty("radius", settings.radius); out.addProperty("ownerBps", settings.ownerBps);
-            out.addProperty("listingBps", settings.listingBps); out.addProperty("saleBps", settings.saleBps); out.addProperty("decayHours", settings.decayHours); out.addProperty("listingMaxPercent", settings.listingMaxPercent);
+            out.addProperty("densityBps", settings.densityBps); out.addProperty("listingBps", settings.listingBps); out.addProperty("saleBps", settings.saleBps); out.addProperty("decayHours", settings.decayHours); out.addProperty("listingMaxPercent", settings.listingMaxPercent);
             out.addProperty("recommendedPrice", InitialLandSettings.DEFAULT_PRICE.toString());
             out.addProperty("recommendedCurrency", "note");
             out.addProperty("currency", settings.currency); out.addProperty("currencyName", currencyName(settings.currency)); out.addProperty("revision", Long.toString(settings.revision));
             JsonArray currencies = new JsonArray(); for (var o : MarketCurrencies.landOptions()) { JsonObject row = new JsonObject(); row.addProperty("id", o.id()); row.addProperty("label", o.label()); currencies.add(row); } out.add("currencies", currencies);
-        } catch (RuntimeException error) { out.addProperty("ok", false); out.addProperty("reason", "设置未保存：请检查价格、币种和请求格式"); }
+        } catch (LandBridge.MissingDensityPricingApi missing) { out.addProperty("ok", false); out.addProperty("reason", missing.getMessage()); }
+        catch (RuntimeException error) { out.addProperty("ok", false); out.addProperty("reason", "设置未保存：请检查价格、币种和请求格式"); }
         return out.toString();
     }
     private static int exactInt(JsonObject input, String key) {
@@ -187,6 +191,7 @@ public final class LandMarketTerminal {
         if (action.equals("sell") && listing == null) {
             JsonObject form;
             try { form = LandPriceQuote.estimate(player.getServer(), chunks); }
+            catch (LandBridge.MissingDensityPricingApi missing) { player.sendMessage(Text.literal(missing.getMessage()), false); return; }
             catch (RuntimeException unavailable) { player.sendMessage(Text.literal("无法计算推荐地价，请管理员核对市场与领地版本。"), false); return; }
             form.addProperty("chunks", chunks.size()); form.addProperty("scopeKind", land.same(chunks) ? "parcel" : "chunks"); form.addProperty("currencyName", currencyName(form.get("currency").getAsString()));
             form.addProperty("recommendedTotal", form.get("total").getAsString());

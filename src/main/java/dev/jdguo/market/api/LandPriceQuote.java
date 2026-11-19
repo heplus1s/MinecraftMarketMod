@@ -15,9 +15,21 @@ import java.util.*;
 public final class LandPriceQuote {
     private LandPriceQuote() {}
     public static JsonObject estimate(MinecraftServer server, List<ChunkRef> chunks) {
+        return estimate(server, chunks, false);
+    }
+    public static JsonObject estimateInitial(MinecraftServer server, List<ChunkRef> chunks) {
+        return estimate(server, chunks, true);
+    }
+    private static JsonObject estimate(MinecraftServer server, List<ChunkRef> chunks, boolean initial) {
+        if (chunks.isEmpty()) throw new IllegalArgumentException("empty land quote");
         var settings = InitialLandSettings.get(server);
         BigInteger total = BigInteger.ZERO;
         int[] owners = settings.dynamicEnabled ? LandBridge.nearbyOwnerCounts(server, chunks, settings.radius) : new int[chunks.size()];
+        long[] density = densityWeights(server, chunks, settings);
+        if (initial && settings.dynamicEnabled && settings.densityBps > 0) {
+            long[] pending = LandPriceMath.batchDensityWeights(chunks, settings.radius);
+            for (int i = 0; i < chunks.size(); i++) density[i] = Math.addExact(density[i], pending[i]);
+        }
         var book = MarketSavedData.get(server).book();
         var listings = settings.dynamicEnabled ? book.all().stream().filter(l -> l.kind() != ListingKind.ITEM
                 && !l.initialGrant() && l.proceeds() == Proceeds.SELLER && l.status() == ListingStatus.OPEN)
@@ -48,23 +60,29 @@ public final class LandPriceQuote {
             for (ChunkRef c : listing.chunks()) offeredPoints.add(new NearbyLandSignals.Point(c, listing.seller(), 10000));
         }
         var offeredIndex = new NearbyLandSignals(offeredPoints, settings.radius);
-        int maxOwners = 0, maxListings = 0; long maxSales = 0;
+        int maxOwners = 0, maxListings = 0; long maxSales = 0, maxDensity = 0;
         for (int i = 0; i < chunks.size(); i++) {
             ChunkRef chunk = chunks.get(i);
             int listedSellers = Math.toIntExact(offeredIndex.weight(chunk) / 10000);
             long weight = soldIndex.weight(chunk);
-            total = total.add(LandPriceMath.price(settings.price, owners[i], settings.ownerBps, listedSellers, settings.listingBps, weight, settings.saleBps));
-            maxOwners = Math.max(maxOwners, owners[i]); maxListings = Math.max(maxListings, listedSellers); maxSales = Math.max(maxSales, weight);
+            total = total.add(LandPriceMath.price(settings.price, owners[i], settings.ownerBps, density[i], settings.radius, settings.densityBps, listedSellers, settings.listingBps, weight, settings.saleBps));
+            maxOwners = Math.max(maxOwners, owners[i]); maxListings = Math.max(maxListings, listedSellers); maxSales = Math.max(maxSales, weight); maxDensity = Math.max(maxDensity, density[i]);
         }
         JsonObject out = new JsonObject(); out.addProperty("total", total.toString());
         out.addProperty("currency", settings.currency); out.addProperty("dynamic", settings.dynamicEnabled);
         out.addProperty("basePrice", settings.price.toString()); out.addProperty("nearbyOwnersMax", maxOwners);
         out.addProperty("listedSellersMax", maxListings); out.addProperty("saleWeightBpsMax", maxSales);
         out.addProperty("listingMaxPercent", settings.listingMaxPercent);
+        out.addProperty("densityBps", settings.densityBps); out.addProperty("densityWeightUnitsMax", maxDensity);
+        out.addProperty("densityWeightScale", settings.radius + 1);
         out.addProperty("excludedHighListings", highListings); out.addProperty("excludedUnpricedListings", unavailableListings);
-        out.addProperty("pricingDetail", settings.dynamicEnabled ? "逐区块计价：基准 × (1 + 业主人数×" + settings.ownerBps + "基点) ÷ (1 + 挂牌人数×" + settings.listingBps + "基点 + 成交权重×" + settings.saleBps + "基点)；100基点=1%；仅计不超过无挂牌压力参考价" + settings.listingMaxPercent + "%的挂牌，高价排除" + highListings + "笔，无有效换算排除" + unavailableListings + "笔"
+        out.addProperty("pricingDetail", settings.dynamicEnabled ? "逐区块计价：基准 × (1 + 业主人数×" + settings.ownerBps + "基点 + 距离加权区块数×" + settings.densityBps + "基点) ÷ (1 + 挂牌人数×" + settings.listingBps + "基点 + 成交权重×" + settings.saleBps + "基点)；100基点=1%；仅计不超过无挂牌压力参考价" + settings.listingMaxPercent + "%的挂牌，高价排除" + highListings + "笔，无有效换算排除" + unavailableListings + "笔" + (initial && settings.densityBps > 0 ? "；同批初售按固定顺序计入之前区块" : "")
                 : "按基准价逐区块累计；动态地价关闭");
         return out;
+    }
+    private static long[] densityWeights(MinecraftServer server, List<ChunkRef> chunks, InitialLandSettings settings) {
+        return settings.dynamicEnabled && settings.densityBps > 0
+                ? LandBridge.nearbyOwnedChunkWeights(server, chunks, settings.radius) : new long[chunks.size()];
     }
     /** Sum exactly the same offered area, using demand and completed sales only. No recursive estimate(). */
     private static BigInteger withoutListingPressure(MinecraftServer server, List<ChunkRef> chunks, InitialLandSettings settings, NearbyLandSignals soldIndex) {
@@ -73,8 +91,9 @@ public final class LandPriceQuote {
         for (int start = 0; start < chunks.size(); start += 1024) {
             var batch = chunks.subList(start, Math.min(chunks.size(), start + 1024));
             int[] owners = LandBridge.nearbyOwnerCounts(server, batch, settings.radius);
+            long[] density = densityWeights(server, batch, settings);
             for (int i = 0; i < batch.size(); i++) total = total.add(LandPriceMath.price(settings.price, owners[i], settings.ownerBps,
-                    0, 0, soldIndex.weight(batch.get(i)), settings.saleBps));
+                    density[i], settings.radius, settings.densityBps, 0, 0, soldIndex.weight(batch.get(i)), settings.saleBps));
         }
         return total;
     }
