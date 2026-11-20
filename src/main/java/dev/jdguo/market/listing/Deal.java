@@ -27,10 +27,16 @@ public final class Deal {
     private final Proceeds proceeds;
     private final String reference;
     private final String refundReference;
+    private final UUID operator;
     private Stage stage;
 
     public Deal(UUID id, UUID listingId, UUID buyer, String buyerName, UUID payee, BigInteger amount,
                 String currency, Proceeds proceeds, String reference, String refundReference, Stage stage) {
+        this(id, listingId, buyer, buyerName, payee, amount, currency, proceeds, reference, refundReference, stage, null);
+    }
+    public Deal(UUID id, UUID listingId, UUID buyer, String buyerName, UUID payee, BigInteger amount,
+                String currency, Proceeds proceeds, String reference, String refundReference, Stage stage, UUID operator) {
+        this.operator = operator;
         this.id = id;
         this.listingId = listingId;
         this.buyer = buyer;
@@ -83,6 +89,8 @@ public final class Deal {
     public String refundReference() {
         return refundReference;
     }
+
+    public UUID operator() { return operator; }
 
     public Stage stage() {
         return stage;

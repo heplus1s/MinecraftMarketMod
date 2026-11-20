@@ -121,6 +121,13 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
                 icon(39, Items.GLOWSTONE_DUST, "买入数量 +1", "当前 " + purchaseCount);
                 icon(41, Items.CHEST, "买入数量 +64", "最多 " + current.count());
             }
+            if (viewer.hasPermissionLevel(2) && current.kind() != ListingKind.ITEM
+                    && current.proceeds() == dev.jdguo.market.listing.Proceeds.SELLER && !current.initialGrant()
+                    && "note".equals(current.currency())
+                    && current.status() == dev.jdguo.market.listing.ListingStatus.OPEN) {
+                icon(43, Items.GOLD_BLOCK, "系统代办回购 · 预览", "从土地出让系统账户付款给卖方",
+                        "回购后归服务器用地；不扣管理员个人余额", "点击仅预览，下一页单独确认");
+            }
             icon(38, Items.PAPER, "已选 " + current.shortId(), "卖方 " + current.sellerName(), "整单 " + view.totalPrice() + " " + MarketMessages.currency(current.currency()), "选择购买 " + (current.kind() == ListingKind.ITEM ? purchaseCount + " 件" : LandScopeLabels.label(current.kind().token(), current.chunks().size())));
             if (current.seller().equals(viewer.getUuid())) icon(42, Items.BARRIER, "确认撤销自己的挂牌", "托管物品退回背包或待领取记录");
             else icon(40, Items.EMERALD, "确认购买 " + (current.kind() == ListingKind.ITEM ? purchaseCount + " 件" : LandScopeLabels.label(current.kind().token(), current.chunks().size())), "从银行扣除指定货币，不自动换汇", "币种 " + MarketMessages.currency(current.currency()), current.priceMode() == PriceMode.SHOP ? "浮动报价将在点击时重新读取" : "本次合计 " + displayedTotal);
@@ -208,6 +215,12 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
             case 46 -> { page++; selected = null; }
             case 47 -> { mine = !mine; page = 0; selected = null; }
             case 48 -> { landTarget = null; landChunks = List.of(); sellKind = 0; selling = true; count = 1; }
+            case 43 -> {
+                if (selected != null && viewer.hasPermissionLevel(2)) {
+                    GovernmentRepurchaseScreen.open(viewer, selected.toString());
+                    return;
+                }
+            }
             case 40, 42 -> {
                 if (selected != null) {
                     MarketReply reply = slot == 40 ? (displayedTotal == null ? MarketReply.message(false, "shop_missing", MarketMessages.line("暂无有效报价，请刷新。")) : desk().buy(viewer, selected.toString(), displayedTotal, desk().book().get(selected).map(l -> l.kind() == ListingKind.ITEM ? purchaseCount : 0).orElse(0))) : desk().cancel(viewer, selected.toString(), false);

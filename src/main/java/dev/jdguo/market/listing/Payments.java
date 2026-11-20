@@ -19,6 +19,23 @@ public interface Payments {
 
     default SettlementResult finalizePayment(String reference) { return SettlementResult.ok(); }
 
+    default SettlementResult governmentReceipt(String reference) {
+        return SettlementResult.fail("receipt_unavailable", "");
+    }
+
+    default SettlementResult finalizeGovernmentBuyback(String reference) {
+        return SettlementResult.fail("government_buyback_missing", "");
+    }
+
+    default SettlementResult prepareGovernmentBuyback(UUID seller, String currency, BigInteger amount, String reference) {
+        return SettlementResult.fail("government_buyback_missing", "");
+    }
+
+    default SettlementResult refundGovernmentBuyback(UUID seller, String currency, BigInteger amount,
+                                                       String paymentReference, String refundReference) {
+        return SettlementResult.fail("government_buyback_missing", "");
+    }
+
     SettlementResult paySeller(UUID buyer, UUID seller, String currency, BigInteger amount, String reference);
 
     SettlementResult payLandGrant(UUID buyer, String currency, BigInteger amount, String reference);

@@ -119,7 +119,7 @@ public final class Listing {
         Proceeds proceeds = Proceeds.parse(tag.getString("Proceeds"));
         PriceMode priceMode = PriceMode.parse(tag.getString("PriceMode"));
         ListingStatus status = ListingStatus.parse(tag.getString("Status"));
-        if (kind == null || proceeds == null || priceMode == null || status == null) {
+        if (kind == null || proceeds == null || proceeds == Proceeds.GOVERNMENT_BUYBACK || priceMode == null || status == null) {
             return null;
         }
         BigInteger unitPrice = money(tag.getString("UnitPrice"));

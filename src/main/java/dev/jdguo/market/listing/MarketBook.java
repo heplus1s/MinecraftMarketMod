@@ -72,6 +72,15 @@ public final class MarketBook {
         return List.copyOf(listings.values());
     }
 
+    /** Initial grants stay private until delivery, refund or recovery; all extant journals block reuse. */
+    public boolean hasPendingInitialGrant(Set<ChunkRef> selected) {
+        if (selected.isEmpty()) return false;
+        for (Listing listing : listings.values()) {
+            if (listing.initialGrant() && listing.chunks().stream().anyMatch(selected::contains)) return true;
+        }
+        return false;
+    }
+
     public List<Deal> deals() {
         return List.copyOf(deals.values());
     }
@@ -132,14 +141,23 @@ public final class MarketBook {
     }
 
     public Deal reserve(UUID listingId, UUID buyer, String buyerName, BigInteger amount) {
+        return reserve(listingId, buyer, buyerName, amount, null);
+    }
+
+    Deal reserve(UUID listingId, UUID buyer, String buyerName, BigInteger amount, UUID governmentOperator) {
         Listing listing = listings.get(listingId);
         if (listing == null || listing.status() != ListingStatus.OPEN) {
             throw new IllegalStateException("not open");
         }
+        if (governmentOperator != null && (listing.kind() == ListingKind.ITEM || listing.initialGrant()
+                || listing.proceeds() != Proceeds.SELLER || !"note".equals(listing.currency()))) {
+            throw new IllegalArgumentException("government_buyback");
+        }
         UUID dealId = UUID.randomUUID();
         listing.reserve(buyer);
         Deal deal = new Deal(dealId, listing.id(), buyer, buyerName, listing.seller(), amount, listing.currency(),
-                listing.proceeds(), SaleReference.payment(dealId), SaleReference.refund(dealId), Deal.Stage.RESERVED);
+                governmentOperator == null ? listing.proceeds() : Proceeds.GOVERNMENT_BUYBACK,
+                SaleReference.payment(dealId), SaleReference.refund(dealId), Deal.Stage.RESERVED, governmentOperator);
         deals.put(dealId, deal);
         return deal;
     }
@@ -436,6 +454,7 @@ public final class MarketBook {
 
     private static NbtCompound trade(Deal deal, Listing listing) {
         NbtCompound tag = new NbtCompound();
+        if (deal.operator() != null) tag.putUuid("Operator", deal.operator());
         tag.putUuid("Id", UUID.randomUUID());
         tag.putUuid("Deal", deal.id());
         tag.putUuid("Listing", deal.listingId());
@@ -459,6 +478,7 @@ public final class MarketBook {
 
     private static NbtCompound writeDeal(Deal deal) {
         NbtCompound tag = new NbtCompound();
+        if (deal.operator() != null) tag.putUuid("Operator", deal.operator());
         tag.putUuid("Id", deal.id());
         tag.putUuid("Listing", deal.listingId());
         tag.putUuid("Buyer", deal.buyer());
@@ -492,7 +512,8 @@ public final class MarketBook {
         }
         UUID payee = tag.containsUuid("Payee") ? tag.getUuid("Payee") : null;
         return new Deal(tag.getUuid("Id"), tag.getUuid("Listing"), tag.getUuid("Buyer"), tag.getString("BuyerName"),
-                payee, amount, tag.getString("Currency"), proceeds, tag.getString("Reference"), tag.getString("Refund"), stage);
+                payee, amount, tag.getString("Currency"), proceeds, tag.getString("Reference"), tag.getString("Refund"), stage,
+                tag.containsUuid("Operator") ? tag.getUuid("Operator") : null);
     }
 
     private static NbtCompound unknown(NbtCompound source, Set<String> known) {

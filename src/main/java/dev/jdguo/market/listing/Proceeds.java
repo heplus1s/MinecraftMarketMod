@@ -6,16 +6,22 @@ package dev.jdguo.market.listing;
  */
 public enum Proceeds {
     SELLER,
-    LAND_GRANT;
+    LAND_GRANT,
+    GOVERNMENT_BUYBACK;
 
     public String token() {
-        return this == LAND_GRANT ? "land_grant" : "seller";
+        return switch (this) {
+            case LAND_GRANT -> "land_grant";
+            case GOVERNMENT_BUYBACK -> "government_buyback";
+            case SELLER -> "seller";
+        };
     }
 
     public static Proceeds parse(String token) {
         if ("land_grant".equals(token)) {
             return LAND_GRANT;
         }
+        if ("government_buyback".equals(token)) return GOVERNMENT_BUYBACK;
         if ("seller".equals(token)) {
             return SELLER;
         }

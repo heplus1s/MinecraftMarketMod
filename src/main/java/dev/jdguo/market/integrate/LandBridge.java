@@ -89,6 +89,11 @@ public final class LandBridge {
         public MissingDensityPricingApi() { super("区块密度加价需要新版领地模组，或由管理员将区块上涨基点设为 0"); }
     }
 
+    public static UUID governmentOwnerId() {
+        Object id = call("governmentOwnerId", new Class<?>[]{});
+        return id instanceof UUID uuid ? uuid : null;
+    }
+
     public static LandView at(MinecraftServer server, String dimension, int chunkX, int chunkZ) {
         Object info = call("parcelAt", new Class<?>[]{MinecraftServer.class, String.class, int.class, int.class}, server, dimension, chunkX, chunkZ);
         return view(info);
@@ -115,6 +120,9 @@ public final class LandBridge {
         if (server == null || listing.parcelId() == null) {
             return Handoff.Outcome.failure("land_missing");
         }
+        if (dev.jdguo.market.api.GovernmentRepurchase.OWNER_ID.equals(buyer)
+                && !buyer.equals(governmentOwnerId()))
+            throw new IllegalStateException("Server land ownership requires compatible landmod");
         String reference = SaleReference.of(listing.id());
         if (listing.initialGrant()) {
             String result = initialGrant(server, buyer, listing.dimension(), coordinates(listing.chunks()), reference);

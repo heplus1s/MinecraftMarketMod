@@ -116,6 +116,15 @@ public final class MarketCommands {
                         .executes(context -> reply(context, desk(context).reload())))
                 .then(CommandManager.literal(MarketCommandNames.LAND).requires(MarketCommands::player)
                         .executes(MarketCommands::usage)
+                        .then(CommandManager.literal("repurchase")
+                                .requires(source -> source.hasPermissionLevel(2))
+                                .then(CommandManager.argument("id", StringArgumentType.word())
+                                        .suggests(MarketCommands::suggestOpen)
+                                        .executes(context -> {
+                                            dev.jdguo.market.ui.GovernmentRepurchaseScreen.open(player(context),
+                                                    StringArgumentType.getString(context, "id"));
+                                            return 1;
+                                        })))
                         .then(landForms(CommandManager.literal(MarketCommandNames.LIST), false))
                         .then(landForms(CommandManager.literal(MarketCommandNames.SERVER).requires(source -> source.hasPermissionLevel(2)), true))
                         .then(CommandManager.literal(MarketCommandNames.SEARCH)

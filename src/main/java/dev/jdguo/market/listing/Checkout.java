@@ -24,6 +24,18 @@ public final class Checkout {
 
     public static Outcome buy(MarketBook book, UUID listingId, UUID buyer, String buyerName, BigInteger amount,
                               Payments payments, Handoff handoff, Runnable persist) {
+        return buy(book, listingId, buyer, buyerName, amount, null, payments, handoff, persist);
+    }
+
+    /** A distinct persistent deal type; recovery must never try to debit the seller personally. */
+    public static Outcome buyGovernment(MarketBook book, UUID listingId, UUID buyer, String buyerName, BigInteger amount,
+                                        UUID operator, Payments payments, Handoff handoff, Runnable persist) {
+        if (operator == null) return Outcome.fail("government_buyback");
+        return buy(book, listingId, buyer, buyerName, amount, operator, payments, handoff, persist);
+    }
+
+    private static Outcome buy(MarketBook book, UUID listingId, UUID buyer, String buyerName, BigInteger amount,
+                               UUID operator, Payments payments, Handoff handoff, Runnable persist) {
         Listing listing = book.get(listingId).orElse(null);
         if (listing == null) {
             return Outcome.fail("missing");
@@ -42,14 +54,15 @@ public final class Checkout {
         }
         Deal deal;
         try {
-            deal = book.reserve(listing.id(), buyer, buyerName, amount);
+            deal = book.reserve(listing.id(), buyer, buyerName, amount, operator);
         } catch (RuntimeException exception) {
             return Outcome.fail("reserved");
         }
         persist.run();
-        SettlementResult paid = charge(listing, buyer, amount, deal, payments);
+        SettlementResult paid = charge(deal, payments);
         if (!paid.success()) {
-            if ("bank_pending".equals(paid.code()) || "bank_failed".equals(paid.code())) {
+            if ("bank_pending".equals(paid.code()) || "bank_failed".equals(paid.code())
+                    || deal.proceeds() == Proceeds.GOVERNMENT_BUYBACK && "save_failed".equals(paid.code())) {
                 return Outcome.fail(paid.code());
             }
             book.abort(deal.id());
@@ -70,7 +83,7 @@ public final class Checkout {
             return Outcome.fail("delivery_pending");
         }
         if (!handed.ok()) {
-            return undo(book, listing, buyer, amount, deal, payments, handed, persist);
+            return undo(book, listing, deal, payments, handed, persist);
         }
         NbtCompound pending = handed.pendingItem();
         boolean waiting = pending != null && !pending.isEmpty();
@@ -91,7 +104,7 @@ public final class Checkout {
         for (Deal deal : book.deals()) {
             Listing candidate = book.get(deal.listingId()).orElse(null);
             if (landOnly && (candidate == null || candidate.kind() == ListingKind.ITEM)) continue;
-            SettlementResult refundReceipt = payments.receipt(deal.refundReference());
+            SettlementResult refundReceipt = receipt(deal, deal.refundReference(), payments);
             if (refundReceipt != null && refundReceipt.success()) {
                 book.abort(deal.id());
                 persist.run();
@@ -101,7 +114,7 @@ public final class Checkout {
                 continue;
             }
             if (deal.stage() == Deal.Stage.RESERVED) {
-                SettlementResult debitReceipt = payments.receipt(deal.reference());
+                SettlementResult debitReceipt = receipt(deal, deal.reference(), payments);
                 if (receiptUncertain(debitReceipt)) {
                     continue;
                 }
@@ -164,9 +177,11 @@ public final class Checkout {
     private static boolean finalizeDelivered(Deal deal, Payments payments) {
         // Only personal-currency system payments reserve a recursive collateral chain.
         // Player transfers and direct currency grants need no finalizer (old bank API stays compatible).
-        if (deal.proceeds() != Proceeds.LAND_GRANT || !payments.requiresFinalization(deal.currency())) return true;
+        if (deal.proceeds() != Proceeds.GOVERNMENT_BUYBACK
+                && (deal.proceeds() != Proceeds.LAND_GRANT || !payments.requiresFinalization(deal.currency()))) return true;
         try {
-            SettlementResult result = payments.finalizePayment(deal.reference());
+            SettlementResult result = deal.proceeds() == Proceeds.GOVERNMENT_BUYBACK
+                    ? payments.finalizeGovernmentBuyback(deal.reference()) : payments.finalizePayment(deal.reference());
             return result != null && result.success();
         } catch (RuntimeException failure) {
             MarketMod.LOGGER.error("Could not finalize delivered land payment {}", deal.id(), failure);
@@ -174,13 +189,18 @@ public final class Checkout {
         }
     }
 
+    private static SettlementResult receipt(Deal deal, String reference, Payments payments) {
+        return deal.proceeds() == Proceeds.GOVERNMENT_BUYBACK
+                ? payments.governmentReceipt(reference) : payments.receipt(reference);
+    }
+
     private static boolean receiptUncertain(SettlementResult receipt) {
         return receipt == null || (!receipt.success() && !"unrecorded".equals(receipt.code()));
     }
 
-    private static Outcome undo(MarketBook book, Listing listing, UUID buyer, BigInteger amount, Deal deal,
+    private static Outcome undo(MarketBook book, Listing listing, Deal deal,
                                 Payments payments, Handoff.Outcome handed, Runnable persist) {
-        SettlementResult refund = refund(listing, buyer, amount, deal, payments);
+        SettlementResult refund = refundDeal(deal, payments);
         if (!refund.success()) {
             persist.run();
             MarketMod.LOGGER.error("Market refund failed for listing {} ({})", listing.id(), refund.code());
@@ -196,24 +216,19 @@ public final class Checkout {
         return Outcome.fail(code);
     }
 
-    private static SettlementResult charge(Listing listing, UUID buyer, BigInteger amount, Deal deal, Payments payments) {
-        if (listing.proceeds() == Proceeds.LAND_GRANT) {
-            return payments.payLandGrant(buyer, listing.currency(), amount, deal.reference());
-        }
-        return payments.paySeller(buyer, listing.seller(), listing.currency(), amount, deal.reference());
-    }
-
-    private static SettlementResult refund(Listing listing, UUID buyer, BigInteger amount, Deal deal, Payments payments) {
-        if (listing.proceeds() == Proceeds.LAND_GRANT) {
-            return payments.refundLandGrant(buyer, listing.currency(), amount, deal.refundReference());
-        }
-        return payments.refundSeller(listing.seller(), buyer, listing.currency(), amount, deal.refundReference());
+    private static SettlementResult charge(Deal deal, Payments payments) {
+        return switch (deal.proceeds()) {
+            case LAND_GRANT -> payments.payLandGrant(deal.buyer(), deal.currency(), deal.amount(), deal.reference());
+            case SELLER -> payments.paySeller(deal.buyer(), deal.payee(), deal.currency(), deal.amount(), deal.reference());
+            case GOVERNMENT_BUYBACK -> payments.prepareGovernmentBuyback(deal.payee(), deal.currency(), deal.amount(), deal.reference());
+        };
     }
 
     private static SettlementResult refundDeal(Deal deal, Payments payments) {
-        if (deal.proceeds() == Proceeds.LAND_GRANT) {
-            return payments.refundLandGrant(deal.buyer(), deal.currency(), deal.amount(), deal.refundReference());
-        }
-        return payments.refundSeller(deal.payee(), deal.buyer(), deal.currency(), deal.amount(), deal.refundReference());
+        return switch (deal.proceeds()) {
+            case LAND_GRANT -> payments.refundLandGrant(deal.buyer(), deal.currency(), deal.amount(), deal.refundReference());
+            case SELLER -> payments.refundSeller(deal.payee(), deal.buyer(), deal.currency(), deal.amount(), deal.refundReference());
+            case GOVERNMENT_BUYBACK -> payments.refundGovernmentBuyback(deal.payee(), deal.currency(), deal.amount(), deal.reference(), deal.refundReference());
+        };
     }
 }

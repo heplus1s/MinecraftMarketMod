@@ -41,6 +41,29 @@ public final class BankBridge {
         }
 
         @Override
+        public SettlementResult governmentReceipt(String reference) {
+            return reflect("marketReceipt", new Class<?>[]{String.class}, new Object[]{reference}, "receipt_unavailable");
+        }
+
+        @Override
+        public SettlementResult finalizeGovernmentBuyback(String reference) {
+            return reflect("completeLandBuyback", new Class<?>[]{String.class}, new Object[]{reference}, "finalize_unavailable");
+        }
+
+        @Override
+        public SettlementResult prepareGovernmentBuyback(UUID seller, String currency, BigInteger amount, String reference) {
+            return reflect("prepareLandBuyback", new Class<?>[]{UUID.class, String.class, BigInteger.class, String.class},
+                    new Object[]{seller, currency, amount, reference}, "government_buyback_missing");
+        }
+
+        @Override
+        public SettlementResult refundGovernmentBuyback(UUID seller, String currency, BigInteger amount,
+                                                        String paymentReference, String refundReference) {
+            return reflect("refundLandBuyback", new Class<?>[]{UUID.class, String.class, BigInteger.class, String.class, String.class},
+                    new Object[]{seller, currency, amount, paymentReference, refundReference}, "government_buyback_missing");
+        }
+
+        @Override
         public SettlementResult paySeller(UUID buyer, UUID seller, String currency, BigInteger amount, String reference) {
             BankSettlement installed = BankSettlement.installed();
             if (installed != null) {
@@ -86,6 +109,11 @@ public final class BankBridge {
     };
 
     private BankBridge() {
+    }
+
+    public static SettlementResult quoteGovernmentBuyback(UUID seller, String currency, BigInteger amount) {
+        return reflect("quoteLandBuyback", new Class<?>[]{UUID.class, String.class, BigInteger.class},
+                new Object[]{seller, currency, amount}, "government_buyback_missing");
     }
 
     public static Payments payments() {

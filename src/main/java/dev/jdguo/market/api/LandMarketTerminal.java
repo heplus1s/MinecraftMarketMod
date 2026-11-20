@@ -51,6 +51,20 @@ public final class LandMarketTerminal {
         for (int i = 0; i < coordinates.length; i += 2) unique.add(new ChunkRef(dimension, coordinates[i], coordinates[i + 1]));
         return List.copyOf(unique);
     }
+    /**
+     * Read-only interlock for administrative allocation of previously unowned land.
+     * The caller must validate admin permission and mutate Land state on the same server thread.
+     */
+    public static String governmentAllocationCheck(MinecraftServer server, String dimension, int[] coordinates) {
+        if (server == null || !server.isOnThread()) return "需要服务器线程";
+        if (dimension == null || dimension.isBlank() || coordinates == null || coordinates.length == 0
+                || coordinates.length % 2 != 0 || coordinates.length > 2048) return "系统认购选区无效";
+        Set<ChunkRef> selected = new HashSet<>();
+        for (int i = 0; i < coordinates.length; i += 2) selected.add(new ChunkRef(dimension, coordinates[i], coordinates[i + 1]));
+        return MarketSavedData.get(server).book().hasPendingInitialGrant(selected)
+                ? "所选范围有未完成交易，请等待恢复" : "ok";
+    }
+
     private static JsonObject quoteObject(MinecraftServer server, UUID viewer, String dimension, int[] coordinates) {
         if (server == null || viewer == null || !server.isOnThread()) return denied("需要服务器线程");
         try {
@@ -87,9 +101,8 @@ public final class LandMarketTerminal {
             String reason = !settings.enabled || !MarketConfig.get().serverLandSales() ? "管理员尚未启用无主地块出售" :
                     !MarketCurrencies.acceptsLand(settings.currency) ? "无主地块出售币种暂不可用" : LandBridge.initialGrantCheck(server, viewer, dimension, LandBridge.coordinates(selected));
             // A PAID or unresolved initial grant must not be sold a second time.
-            for (Listing pending : MarketDesk.get(server).book().all()) {
-                if (pending.initialGrant() && pending.chunks().stream().anyMatch(selected::contains)) reason = "所选范围有未完成交易，请等待恢复";
-            }
+            if (MarketSavedData.get(server).book().hasPendingInitialGrant(new HashSet<>(selected)))
+                reason = "所选范围有未完成交易，请等待恢复";
             out.addProperty("buyable", "ok".equals(reason)); out.addProperty("reason", "ok".equals(reason) ? "无主地块整批总价" : reason);
             return out;
         } catch (LandBridge.MissingDensityPricingApi missing) { return denied(missing.getMessage()); }
