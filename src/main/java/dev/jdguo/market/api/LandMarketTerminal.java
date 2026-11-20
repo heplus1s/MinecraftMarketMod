@@ -89,7 +89,11 @@ public final class LandMarketTerminal {
                 out.addProperty("currency", found.currency()); out.addProperty("currencyName", currencyName(found.currency()));
                 scope(out, found.chunks());
                 boolean ready = found.status() == ListingStatus.OPEN && !found.seller().equals(viewer);
-                out.addProperty("buyable", ready); out.addProperty("reason", ready ? "整笔挂牌总价，包含全部显示范围" : "自己的挂牌或交易正在进行");
+                boolean banking = !ServerLandIdentity.isResale(found.proceeds(), found.seller())
+                        || dev.jdguo.market.integrate.BankBridge.governmentResaleAvailable();
+                out.addProperty("buyable", ready && banking);
+                out.addProperty("reason", !banking ? "银行尚不支持服务器用地结算"
+                        : ready ? "整笔挂牌总价，包含全部显示范围" : "自己的挂牌或交易正在进行");
                 return out;
             }
             InitialLandSettings settings = InitialLandSettings.get(server);

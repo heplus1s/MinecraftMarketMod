@@ -94,6 +94,12 @@ public final class LandBridge {
         return id instanceof UUID uuid ? uuid : null;
     }
 
+    public static LandView governmentSaleScope(MinecraftServer server, UUID operator, UUID parcel) {
+        Object scope = call("governmentSaleScope", new Class<?>[]{MinecraftServer.class, UUID.class, UUID.class},
+                server, operator, parcel);
+        return view(scope);
+    }
+
     public static LandView at(MinecraftServer server, String dimension, int chunkX, int chunkZ) {
         Object info = call("parcelAt", new Class<?>[]{MinecraftServer.class, String.class, int.class, int.class}, server, dimension, chunkX, chunkZ);
         return view(info);

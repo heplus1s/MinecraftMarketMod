@@ -21,8 +21,8 @@ import java.util.UUID;
 
 /** Server-authoritative administration of repurchases; plain player checkout stays separate. */
 public final class GovernmentRepurchase {
-    public static final UUID OWNER_ID = UUID.fromString("cbd4b6ae-6633-3ba2-982f-700dc5d4fdb8");
-    public static final String OWNER_NAME = "服务器用地";
+    public static final UUID OWNER_ID = dev.jdguo.market.listing.ServerLandIdentity.ID;
+    public static final String OWNER_NAME = dev.jdguo.market.listing.ServerLandIdentity.LABEL;
     private static final long TTL_NANOS = 60_000_000_000L;
     private static final Map<UUID, Snapshot> PREVIEWS = new HashMap<>();
     private GovernmentRepurchase() {}

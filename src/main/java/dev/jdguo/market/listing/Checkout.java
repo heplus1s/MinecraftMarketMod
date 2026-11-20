@@ -62,7 +62,7 @@ public final class Checkout {
         SettlementResult paid = charge(deal, payments);
         if (!paid.success()) {
             if ("bank_pending".equals(paid.code()) || "bank_failed".equals(paid.code())
-                    || deal.proceeds() == Proceeds.GOVERNMENT_BUYBACK && "save_failed".equals(paid.code())) {
+                    || (deal.proceeds() == Proceeds.GOVERNMENT_BUYBACK || governmentResale(deal)) && "save_failed".equals(paid.code())) {
                 return Outcome.fail(paid.code());
             }
             book.abort(deal.id());
@@ -177,11 +177,12 @@ public final class Checkout {
     private static boolean finalizeDelivered(Deal deal, Payments payments) {
         // Only personal-currency system payments reserve a recursive collateral chain.
         // Player transfers and direct currency grants need no finalizer (old bank API stays compatible).
-        if (deal.proceeds() != Proceeds.GOVERNMENT_BUYBACK
+        if (deal.proceeds() != Proceeds.GOVERNMENT_BUYBACK && !governmentResale(deal)
                 && (deal.proceeds() != Proceeds.LAND_GRANT || !payments.requiresFinalization(deal.currency()))) return true;
         try {
             SettlementResult result = deal.proceeds() == Proceeds.GOVERNMENT_BUYBACK
-                    ? payments.finalizeGovernmentBuyback(deal.reference()) : payments.finalizePayment(deal.reference());
+                    ? payments.finalizeGovernmentBuyback(deal.reference())
+                    : governmentResale(deal) ? payments.finalizeGovernmentResale(deal.reference()) : payments.finalizePayment(deal.reference());
             return result != null && result.success();
         } catch (RuntimeException failure) {
             MarketMod.LOGGER.error("Could not finalize delivered land payment {}", deal.id(), failure);
@@ -190,7 +191,7 @@ public final class Checkout {
     }
 
     private static SettlementResult receipt(Deal deal, String reference, Payments payments) {
-        return deal.proceeds() == Proceeds.GOVERNMENT_BUYBACK
+        return deal.proceeds() == Proceeds.GOVERNMENT_BUYBACK || governmentResale(deal)
                 ? payments.governmentReceipt(reference) : payments.receipt(reference);
     }
 
@@ -216,7 +217,12 @@ public final class Checkout {
         return Outcome.fail(code);
     }
 
+    private static boolean governmentResale(Deal deal) {
+        return ServerLandIdentity.isResale(deal.proceeds(), deal.payee());
+    }
+
     private static SettlementResult charge(Deal deal, Payments payments) {
+        if (governmentResale(deal)) return payments.payGovernmentResale(deal.buyer(), deal.currency(), deal.amount(), deal.reference());
         return switch (deal.proceeds()) {
             case LAND_GRANT -> payments.payLandGrant(deal.buyer(), deal.currency(), deal.amount(), deal.reference());
             case SELLER -> payments.paySeller(deal.buyer(), deal.payee(), deal.currency(), deal.amount(), deal.reference());

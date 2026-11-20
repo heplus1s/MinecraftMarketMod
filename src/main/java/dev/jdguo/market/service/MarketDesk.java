@@ -561,6 +561,8 @@ public final class MarketDesk {
             case "inventory_pending" -> "物品存档结果尚未确认，已锁定挂牌等待管理员核对。请勿重复挂牌或退款。";
             case "reserved" -> "这块挂牌正在结算，请稍后再试。";
             case "bank_missing" -> "银行模组没有加载，货款无法结算。";
+            case "government_resale_missing" -> "银行尚未提供服务器用地结算，未扣款。";
+            case "save_failed" -> "账本保存结果尚待核验，请勿重复付款。";
             case "bank_hook_missing" -> "银行尚未提供玩家之间的储蓄划转，货款无法交给卖方。";
             case "land_grant_missing" -> "银行尚未提供土地出让账户，服务器出让土地的货款无法入账。";
             case "insufficient_funds" -> "储蓄余额不足，没有扣款。";

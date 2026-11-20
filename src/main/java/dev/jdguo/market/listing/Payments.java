@@ -19,6 +19,14 @@ public interface Payments {
 
     default SettlementResult finalizePayment(String reference) { return SettlementResult.ok(); }
 
+    default SettlementResult payGovernmentResale(UUID buyer, String currency, BigInteger amount, String reference) {
+        return SettlementResult.fail("government_resale_missing", "");
+    }
+
+    default SettlementResult finalizeGovernmentResale(String reference) {
+        return SettlementResult.fail("government_resale_missing", "");
+    }
+
     default SettlementResult governmentReceipt(String reference) {
         return SettlementResult.fail("receipt_unavailable", "");
     }

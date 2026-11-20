@@ -41,6 +41,22 @@ public final class BankBridge {
         }
 
         @Override
+        public SettlementResult payGovernmentResale(UUID buyer, String currency, BigInteger amount, String reference) {
+            if (!"note".equals(currency)) return SettlementResult.fail("unknown_currency", "");
+            var quote = landQuote("note", amount, "note");
+            if (!governmentResaleQuoteMatches(quote, amount)) return SettlementResult.fail("government_resale_missing", "");
+            // Check the strict recovery API before debiting, even if general land quote APIs exist.
+            if (!governmentResaleAvailable()) return SettlementResult.fail("government_resale_missing", "");
+            return reflect("creditLandGrantQuoted", new Class<?>[]{UUID.class, String.class, BigInteger.class, String.class, String.class, String.class},
+                    new Object[]{buyer, "note", amount, "note", quote.get("fingerprint").getAsString(), reference}, "government_resale_missing");
+        }
+
+        @Override
+        public SettlementResult finalizeGovernmentResale(String reference) {
+            return reflect("completeLandPurchase", new Class<?>[]{String.class}, new Object[]{reference}, "finalize_unavailable");
+        }
+
+        @Override
         public SettlementResult governmentReceipt(String reference) {
             return reflect("marketReceipt", new Class<?>[]{String.class}, new Object[]{reference}, "receipt_unavailable");
         }
@@ -109,6 +125,26 @@ public final class BankBridge {
     };
 
     private BankBridge() {
+    }
+
+    public static boolean governmentResaleAvailable() {
+        if (!FabricLoader.getInstance().isModLoaded("bankmod")) return false;
+        try {
+            Class<?> type = Class.forName(BankHookSpec.BANK_CLASS);
+            type.getMethod("completeLandPurchase", String.class);
+            type.getMethod("creditLandGrantQuoted", UUID.class, String.class, BigInteger.class, String.class, String.class, String.class);
+            return true;
+        } catch (ReflectiveOperationException | LinkageError missing) { return false; }
+    }
+
+    static boolean governmentResaleQuoteMatches(com.google.gson.JsonObject quote, BigInteger amount) {
+        try {
+            return quote.get("success").getAsBoolean()
+                    && "note".equals(quote.get("paymentCurrency").getAsString())
+                    && new BigDecimal(quote.get("quantity").getAsString()).compareTo(new BigDecimal(amount)) == 0
+                    && new BigDecimal(quote.get("noteTopup").getAsString()).signum() == 0
+                    && !quote.get("fingerprint").getAsString().isBlank();
+        } catch (RuntimeException invalid) { return false; }
     }
 
     public static SettlementResult quoteGovernmentBuyback(UUID seller, String currency, BigInteger amount) {

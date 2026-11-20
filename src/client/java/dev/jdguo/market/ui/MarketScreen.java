@@ -127,6 +127,11 @@ public final class MarketScreen extends Screen {
                 send("buy "+selectedOffer+" "+total+(item(current)?" "+n:""));
             }catch(RuntimeException ex){notice="数量须为正整数且不超过卖单剩余量；无报价不能成交。";confirming=false;}});buy.active=row!=null&&!pending;
         if(landMode){
+            if(client.player!=null&&client.player.hasPermissionLevel(2)) {
+                button("个人 → 服务器用地",sx,y+52,w,()->{
+                    if(client.getNetworkHandler()!=null){client.setScreen(null);client.getNetworkHandler().sendChatCommand("market land servermode");}
+                }).setTooltip(Tooltip.of(Text.literal("OP 2：管理脚下服务器宗地；普通市场买入仍使用个人账户")));
+            }
             var sellLand=button("出售脚下整宗 · 推荐价",sx,y+107,w,()->{
                 MarketUiClient.action("landform"); notice="正在打开出售表单，推荐价格可修改；请站在自己的领地内。";
             }); sellLand.active=!pending;

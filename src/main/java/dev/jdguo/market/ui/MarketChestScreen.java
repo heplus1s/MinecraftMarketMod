@@ -35,6 +35,8 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
     private final List<UUID> shown = new ArrayList<>();
     private UUID landTarget;
     private List<dev.jdguo.market.listing.ChunkRef> landChunks = List.of();
+    private boolean serverLand, serverConfirmed, consumed;
+    private String serverLandName = "";
     private int page;
     private boolean mine;
     private boolean selling;
@@ -85,6 +87,85 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         }, Text.literal("土地市场 · 银行结算")));
     }
 
+    /** Explicit administrator form; never changes the identity used for ordinary purchases. */
+    public static void openServerLand(ServerPlayerEntity player, dev.jdguo.market.integrate.LandView land, UUID existingListing) {
+        if (!player.hasPermissionLevel(2)) {
+            player.sendMessage(Text.literal("服务器用地管理需要 OP 2 权限。"), false);
+            return;
+        }
+        player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, inv, who) -> {
+            MarketChestScreen screen = new MarketChestScreen(id, inv, player, new SimpleInventory(54));
+            screen.serverLand = true;
+            screen.landTarget = land.id();
+            screen.landChunks = List.copyOf(land.chunks());
+            screen.serverLandName = land.name();
+            screen.selected = existingListing;
+            screen.currency = "note";
+            if (existingListing != null) {
+                Listing existing = screen.desk().book().get(existingListing).orElse(null);
+                if (existing != null) screen.displayedTotal = existing.unitPrice();
+            }
+            screen.renderMenu();
+            return screen;
+        }, Text.literal("服务器用地 · 管理员代办")));
+    }
+
+    private void renderServerLand() {
+        icon(0, Items.PLAYER_HEAD, "模式：服务器用地", "管理员仅代办，不取得土地或售地收入", "默认市场模式仍为个人交易");
+        icon(4, Items.GRASS_BLOCK, serverLandName, "宗地 " + landTarget, "整宗范围 " + landChunks.size() + " 个区块", "仅出售服务器所有土地；确认时复核范围与权属");
+        icon(8, Items.GOLD_INGOT, "收款：土地出让系统账户", "仅央行券 note，不自动换汇", "成交收入不进入管理员个人储蓄");
+        int pages = Math.max(1, (landChunks.size() + 8) / 9);
+        page = Math.max(0, Math.min(page, pages - 1));
+        for (int i = page * 9; i < Math.min(landChunks.size(), (page + 1) * 9); i++) {
+            var chunk = landChunks.get(i);
+            icon(9 + i - page * 9, Items.MAP, "区块 " + chunk.x() + ", " + chunk.z(), "维度 " + chunk.dimension());
+        }
+        icon(18, Items.ARROW, "上一页范围");
+        icon(26, Items.ARROW, "下一页范围", "第 " + (page + 1) + "/" + pages + " 页");
+        icon(22, Items.PAPER, "整宗总价 " + (selected != null && displayedTotal != null ? displayedTotal : price) + " 央行券", "不是每区块单价；不乘区块数量", selected == null ? "正整数，可在下方调整" : "现有挂牌 " + selected);
+        if (selected == null) {
+            icon(28, Items.REDSTONE, "总价 -100"); icon(29, Items.REDSTONE, "总价 -10"); icon(30, Items.REDSTONE, "总价 -1");
+            icon(32, Items.GLOWSTONE_DUST, "总价 +1"); icon(33, Items.GLOWSTONE_DUST, "总价 +10"); icon(34, Items.GLOWSTONE_DUST, "总价 +100");
+            icon(40, Items.EMERALD, serverConfirmed ? "确认挂牌服务器用地" : "预览并确认总价", "整宗总价 " + price + " 央行券", "范围 " + landChunks.size() + " 个区块", "收款 land_grant；不使用个人账户", serverConfirmed ? "点击提交，服务端重新核验权限与权属" : "首次点击仅进入确认，不挂牌");
+        } else {
+            icon(40, Items.BARRIER, serverConfirmed ? "确认撤销系统挂牌" : "预览撤销系统挂牌", "挂牌 " + selected, "撤销后仍归服务器所有", "不会转给管理员或退入个人账户");
+        }
+        icon(45, Items.PLAYER_HEAD, "返回个人模式", "普通市场购买仍从个人银行储蓄付款");
+        icon(53, Items.BARRIER, "关闭，不提交");
+    }
+
+    private void clickServerLand(int slot) {
+        if (!viewer.hasPermissionLevel(2)) {
+            consumed = true; viewer.closeHandledScreen();
+            viewer.sendMessage(Text.literal("权限已变更，未提交服务器用地操作。"), false); return;
+        }
+        if (slot == 45) { consumed = true; viewer.closeHandledScreen(); open(viewer); return; }
+        if (slot == 18) page--;
+        if (slot == 26) page++;
+        if (selected == null) {
+            long delta = switch (slot) { case 28 -> -100; case 29 -> -10; case 30 -> -1; case 32 -> 1; case 33 -> 10; case 34 -> 100; default -> 0; };
+            if (delta != 0) {
+                price = delta > 0 ? (price > Long.MAX_VALUE - delta ? Long.MAX_VALUE : price + delta) : Math.max(1, price + delta);
+                serverConfirmed = false;
+            }
+        }
+        if (slot == 40) {
+            if (!serverConfirmed) { serverConfirmed = true; renderMenu(); return; }
+            consumed = true; viewer.closeHandledScreen();
+            try {
+                MarketReply result = selected == null
+                        ? dev.jdguo.market.api.GovernmentSale.list(viewer, landTarget, landChunks, price)
+                        : dev.jdguo.market.api.GovernmentSale.cancel(viewer, selected);
+                result.lines().forEach(line -> viewer.sendMessage(line, false));
+            } catch (RuntimeException failure) {
+                viewer.sendMessage(Text.literal("系统挂牌处理异常，请先核对挂牌状态，不要重复提交。"), false);
+                dev.jdguo.market.MarketMod.LOGGER.error("Government sale form failed", failure);
+            }
+            return;
+        }
+        renderMenu();
+    }
+
     private MarketDesk desk() { return MarketDesk.get(viewer.getServer()); }
     private void icon(int slot, Item item, String name, String... lore) {
         ItemStack stack = new ItemStack(item);
@@ -96,6 +177,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
     }
     private void renderMenu() {
         menu.clear(); shown.clear();
+        if (serverLand) { renderServerLand(); sendContentUpdates(); return; }
         if (selling) { renderSell(); sendContentUpdates(); return; }
         List<Listing> listings = desk().book().search(mine ? viewer.getUuid() : null, null, null, false);
         int pages = Math.max(1, (listings.size() + 35) / 36);
@@ -136,6 +218,8 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         icon(47, Items.PLAYER_HEAD, mine ? "我的挂牌 · 点击查看全部" : "全部挂牌 · 点击查看我的");
         icon(48, Items.CHEST, "挂牌手中物品", "打开数量、价格和结算币种选择");
         icon(49, Items.CLOCK, "刷新 · 第 " + (page + 1) + "/" + pages + " 页", "共 " + listings.size() + " 笔挂牌");
+        icon(50, Items.PLAYER_HEAD, "当前模式：个人", "买入从个人银行储蓄扣款");
+        if (viewer.hasPermissionLevel(2)) icon(51, Items.GRASS_BLOCK, "切换：服务器用地", "管理脚下服务器宗地，OP 2 代办", "只打开表单，不改变普通购买身份");
         icon(53, Items.BARRIER, "关闭"); sendContentUpdates();
     }
     private void renderSell() {
@@ -161,8 +245,10 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
     }
     @Override public void onSlotClick(int slot, int button, SlotActionType action, PlayerEntity player) {
         // Never call super: icons, hotbar swaps, drag, clone and quick-move must not move real items.
-        if (player != viewer || action != SlotActionType.PICKUP || button != 0 || slot < 0 || slot >= 54) return;
+        if (player != viewer || viewer.currentScreenHandler != this || consumed || action != SlotActionType.PICKUP || button != 0 || slot < 0 || slot >= 54) return;
         if (slot == 53) { viewer.closeHandledScreen(); return; }
+        if (serverLand) { clickServerLand(slot); return; }
+        if (!selling && slot == 51 && viewer.hasPermissionLevel(2)) { dev.jdguo.market.api.GovernmentSale.openStanding(viewer); return; }
         if (selling) {
             if (slot == 20 || slot == 21 || slot == 29 || slot == 24 || slot == 23 || slot == 33) landPriceConfirmedCurrency = true;
             switch (slot) {
@@ -233,5 +319,5 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         renderMenu();
     }
     @Override public ItemStack quickMove(PlayerEntity player, int slot) { return ItemStack.EMPTY; }
-    @Override public boolean canUse(PlayerEntity player) { return player == viewer && viewer.isAlive(); }
+    @Override public boolean canUse(PlayerEntity player) { return player == viewer && viewer.isAlive() && !consumed && (!serverLand || viewer.hasPermissionLevel(2)); }
 }
