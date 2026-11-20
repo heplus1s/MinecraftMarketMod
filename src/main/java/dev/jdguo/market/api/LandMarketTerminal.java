@@ -147,11 +147,22 @@ public final class LandMarketTerminal {
                     settings.dynamicEnabled = old.getBoolean("DynamicEnabled"); settings.radius = old.getInt("Radius"); settings.ownerBps = old.getInt("OwnerBps");
                     settings.densityBps = old.getInt("DensityBps"); settings.listingBps = old.getInt("ListingBps"); settings.saleBps = old.getInt("SaleBps"); settings.decayHours = old.getInt("DecayHours"); settings.listingMaxPercent = old.getInt("ListingMaxPercent"); settings.revision = old.getLong("Revision"); settings.markDirty(); throw failure;
                 }
+            } else if ("setDimension".equals(action)) {
+                if (request.has("revision") && !Long.toString(settings.revision).equals(request.get("revision").getAsString())) {
+                    out.addProperty("ok", false);
+                    out.addProperty("reason", "报价设置已变化，请读取服务器当前值后重试");
+                    return out.toString();
+                }
+                settings.setDimensionPricing(server, new DimensionFirstSalePolicy(exactInt(request, "netherPercent"),
+                        exactInt(request, "endCenterPercent"), exactInt(request, "endCenterRadius")));
             } else if (!"get".equals(action)) throw new IllegalArgumentException("未知管理操作");
             out.addProperty("ok", true); out.addProperty("reason", "只影响未来无主地块出售，不修改已有挂牌");
             out.addProperty("enabled", settings.enabled); out.addProperty("price", settings.price.toString());
             out.addProperty("dynamicEnabled", settings.dynamicEnabled); out.addProperty("radius", settings.radius); out.addProperty("ownerBps", settings.ownerBps);
             out.addProperty("densityBps", settings.densityBps); out.addProperty("listingBps", settings.listingBps); out.addProperty("saleBps", settings.saleBps); out.addProperty("decayHours", settings.decayHours); out.addProperty("listingMaxPercent", settings.listingMaxPercent);
+            out.addProperty("netherPercent", settings.dimensionPricing.netherPercent());
+            out.addProperty("endCenterPercent", settings.dimensionPricing.endCenterPercent());
+            out.addProperty("endCenterRadius", settings.dimensionPricing.endCenterRadius());
             out.addProperty("recommendedPrice", InitialLandSettings.DEFAULT_PRICE.toString());
             out.addProperty("recommendedCurrency", "note");
             out.addProperty("currency", settings.currency); out.addProperty("currencyName", currencyName(settings.currency)); out.addProperty("revision", Long.toString(settings.revision));
@@ -162,7 +173,7 @@ public final class LandMarketTerminal {
     }
     private static int exactInt(JsonObject input, String key) {
         String raw = input.get(key).getAsString();
-        if (!raw.matches("[0-9]{1,5}")) throw new IllegalArgumentException(key);
+        if (!raw.matches("[0-9]{1,8}")) throw new IllegalArgumentException(key);
         return Integer.parseInt(raw);
     }
     public static void open(ServerPlayerEntity player, UUID parcelId, String action, String dimension, int[] coordinates) {

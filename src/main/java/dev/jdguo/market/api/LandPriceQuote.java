@@ -61,11 +61,14 @@ public final class LandPriceQuote {
         }
         var offeredIndex = new NearbyLandSignals(offeredPoints, settings.radius);
         int maxOwners = 0, maxListings = 0; long maxSales = 0, maxDensity = 0;
+        var basePercents = new java.util.TreeSet<Integer>();
         for (int i = 0; i < chunks.size(); i++) {
             ChunkRef chunk = chunks.get(i);
             int listedSellers = Math.toIntExact(offeredIndex.weight(chunk) / 10000);
             long weight = soldIndex.weight(chunk);
-            total = total.add(LandPriceMath.price(settings.price, owners[i], settings.ownerBps, density[i], settings.radius, settings.densityBps, listedSellers, settings.listingBps, weight, settings.saleBps));
+            int percent = initial ? settings.dimensionPricing.percent(chunk) : DimensionFirstSalePolicy.NORMAL;
+            basePercents.add(percent);
+            total = total.add(LandPriceMath.price(settings.price, percent, owners[i], settings.ownerBps, density[i], settings.radius, settings.densityBps, listedSellers, settings.listingBps, weight, settings.saleBps));
             maxOwners = Math.max(maxOwners, owners[i]); maxListings = Math.max(maxListings, listedSellers); maxSales = Math.max(maxSales, weight); maxDensity = Math.max(maxDensity, density[i]);
         }
         JsonObject out = new JsonObject(); out.addProperty("total", total.toString());
@@ -76,8 +79,14 @@ public final class LandPriceQuote {
         out.addProperty("densityBps", settings.densityBps); out.addProperty("densityWeightUnitsMax", maxDensity);
         out.addProperty("densityWeightScale", settings.radius + 1);
         out.addProperty("excludedHighListings", highListings); out.addProperty("excludedUnpricedListings", unavailableListings);
-        out.addProperty("pricingDetail", settings.dynamicEnabled ? "逐区块计价：基准 × (1 + 业主人数×" + settings.ownerBps + "基点 + 距离加权区块数×" + settings.densityBps + "基点) ÷ (1 + 挂牌人数×" + settings.listingBps + "基点 + 成交权重×" + settings.saleBps + "基点)；100基点=1%；仅计不超过无挂牌压力参考价" + settings.listingMaxPercent + "%的挂牌，高价排除" + highListings + "笔，无有效换算排除" + unavailableListings + "笔" + (initial && settings.densityBps > 0 ? "；同批初售按固定顺序计入之前区块" : "")
-                : "按基准价逐区块累计；动态地价关闭");
+        String region = initial ? "维度基础倍率 " + basePercents.stream().map(p -> p + "%").collect(java.util.stream.Collectors.joining(" / ")) + "；" : "";
+        if (initial) {
+            var percentages = new com.google.gson.JsonArray();
+            basePercents.forEach(percentages::add);
+            out.add("dimensionBasePercents", percentages);
+        }
+        out.addProperty("pricingDetail", region + (settings.dynamicEnabled ? "逐区块计价：基准 × (1 + 业主人数×" + settings.ownerBps + "基点 + 距离加权区块数×" + settings.densityBps + "基点) ÷ (1 + 挂牌人数×" + settings.listingBps + "基点 + 成交权重×" + settings.saleBps + "基点)；100基点=1%；仅计不超过无挂牌压力参考价" + settings.listingMaxPercent + "%的挂牌，高价排除" + highListings + "笔，无有效换算排除" + unavailableListings + "笔" + (initial && settings.densityBps > 0 ? "；同批初售按固定顺序计入之前区块" : "")
+                : "按基准价逐区块累计；动态地价关闭"));
         return out;
     }
     private static long[] densityWeights(MinecraftServer server, List<ChunkRef> chunks, InitialLandSettings settings) {

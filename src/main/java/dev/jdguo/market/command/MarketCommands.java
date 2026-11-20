@@ -8,6 +8,8 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import dev.jdguo.market.message.MarketMessages;
+import dev.jdguo.market.listing.DimensionFirstSalePolicy;
+import dev.jdguo.market.world.InitialLandSettings;
 import dev.jdguo.market.api.SettlementResult;
 import dev.jdguo.market.integrate.BankBridge;
 import dev.jdguo.market.net.MarketSync;
@@ -40,6 +42,7 @@ public final class MarketCommands {
         dispatcher.register(CommandManager.literal(MarketCommandNames.ROOT)
                 .executes(MarketCommands::usage)
                 .then(personalNoteCommands())
+                .then(dimensionPriceCommands())
                 .then(CommandManager.literal("audit").requires(source -> source.hasPermissionLevel(2)).executes(context -> {
                     var book = MarketDesk.get(context.getSource().getServer()).book();
                     int count = 0;
@@ -119,6 +122,39 @@ public final class MarketCommands {
                                 .executes(context -> reply(context, desk(context).search(player(context), "land", "", 1)))
                                 .then(CommandManager.argument("page", IntegerArgumentType.integer(1))
                                         .executes(context -> reply(context, desk(context).search(player(context), "land", "", IntegerArgumentType.getInteger(context, "page"))))))));
+    }
+
+    private static LiteralArgumentBuilder<ServerCommandSource> dimensionPriceCommands() {
+        return CommandManager.literal("landbase").requires(source -> source.hasPermissionLevel(2))
+                .executes(context -> dimensionPrice(context, false))
+                .then(CommandManager.argument("netherPercent", IntegerArgumentType.integer(DimensionFirstSalePolicy.NORMAL, DimensionFirstSalePolicy.MAX_PERCENT))
+                        .then(CommandManager.argument("endCenterPercent", IntegerArgumentType.integer(DimensionFirstSalePolicy.NORMAL, DimensionFirstSalePolicy.MAX_PERCENT))
+                                .then(CommandManager.argument("endCenterRadius", IntegerArgumentType.integer(0,
+                                        DimensionFirstSalePolicy.MAX_RADIUS))
+                                        .executes(context -> dimensionPrice(context, true)))));
+    }
+
+    private static int dimensionPrice(CommandContext<ServerCommandSource> context, boolean update) {
+        var source = context.getSource();
+        if (!source.hasPermissionLevel(2)) return 0;
+        var server = source.getServer();
+        var settings = InitialLandSettings.get(server);
+        if (update) {
+            try {
+                settings.setDimensionPricing(server, new DimensionFirstSalePolicy(
+                        IntegerArgumentType.getInteger(context, "netherPercent"),
+                        IntegerArgumentType.getInteger(context, "endCenterPercent"),
+                        IntegerArgumentType.getInteger(context, "endCenterRadius")));
+            } catch (RuntimeException failure) {
+                source.sendError(Text.literal("维度初售基价设置未保存，请检查服务器日志。"));
+                return 0;
+            }
+        }
+        var policy = settings.dimensionPricing;
+        source.sendFeedback(() -> Text.literal("系统初售基价：下界 " + policy.netherPercent()
+                + "%；末地中心 " + policy.endCenterPercent() + "%，半径 " + policy.endCenterRadius()
+                + " 格；其他地块 100%。不影响二手挂牌。"), false);
+        return 1;
     }
 
     /** Explicit currency path, preserving every old /market list command. */

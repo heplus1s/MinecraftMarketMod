@@ -13,6 +13,12 @@ public final class LandPriceMath {
     }
     public static BigInteger price(BigInteger base, int owners, int ownerBps, long densityWeight, int radius, int densityBps,
                                    int listings, int listingBps, long saleWeightBps, int saleBps) {
+        return price(base, 100, owners, ownerBps, densityWeight, radius, densityBps, listings, listingBps, saleWeightBps, saleBps);
+    }
+    public static BigInteger price(BigInteger base, int basePercent, int owners, int ownerBps, long densityWeight, int radius, int densityBps,
+                                   int listings, int listingBps, long saleWeightBps, int saleBps) {
+        if (basePercent < DimensionFirstSalePolicy.NORMAL || basePercent > DimensionFirstSalePolicy.MAX_PERCENT)
+            throw new IllegalArgumentException("base percent");
         if (radius < 0 || radius > 128 || densityBps < 0 || densityWeight < 0)
             throw new IllegalArgumentException("density pricing");
         if (base == null || base.signum() <= 0 || owners < 0 || listings < 0 || saleWeightBps < 0
@@ -21,9 +27,9 @@ public final class LandPriceMath {
         BigInteger scale = BigInteger.valueOf(radius + 1L);
         BigInteger demand = ten.add(BigInteger.valueOf(owners).multiply(BigInteger.valueOf(ownerBps))).multiply(scale)
                 .add(BigInteger.valueOf(densityWeight).multiply(BigInteger.valueOf(densityBps)));
-        BigInteger numerator = base.multiply(demand).multiply(ten);
+        BigInteger numerator = base.multiply(BigInteger.valueOf(basePercent)).multiply(demand).multiply(ten);
         BigInteger denominator = ten.add(BigInteger.valueOf(listings).multiply(BigInteger.valueOf(listingBps))).multiply(ten)
-                .add(BigInteger.valueOf(saleWeightBps).multiply(BigInteger.valueOf(saleBps))).multiply(scale);
+                .add(BigInteger.valueOf(saleWeightBps).multiply(BigInteger.valueOf(saleBps))).multiply(scale).multiply(BigInteger.valueOf(100));
         // One minimum indivisible pricing unit, never zero or negative.
         return numerator.add(denominator).subtract(BigInteger.ONE).divide(denominator);
     }
