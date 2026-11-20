@@ -75,10 +75,11 @@ class ServerLandResaleTest {
             if (!allowComplete) return SettlementResult.fail("missing", "");
             events.add("release"); return SettlementResult.ok();
         }
-        public SettlementResult refundLandGrant(UUID b, String c, BigInteger n, String r) {
+        public SettlementResult refundGovernmentResale(UUID b, String c, BigInteger n, String r) {
             assertEquals(BUYER, b); assertEquals("note", c); assertEquals(BigInteger.TEN, n);
             events.add("refund"); return SettlementResult.ok();
         }
+        public SettlementResult refundLandGrant(UUID b, String c, BigInteger n, String r) { return fail("legacy refund"); }
         public SettlementResult payLandGrant(UUID b, String c, BigInteger n, String r) { return fail("legacy charge"); }
         public SettlementResult finalizePayment(String r) { return fail("legacy release"); }
         public SettlementResult paySeller(UUID a, UUID b, String c, BigInteger n, String r) { return fail("player charge"); }

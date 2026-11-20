@@ -231,6 +231,8 @@ public final class Checkout {
     }
 
     private static SettlementResult refundDeal(Deal deal, Payments payments) {
+        if (governmentResale(deal))
+            return payments.refundGovernmentResale(deal.buyer(), deal.currency(), deal.amount(), deal.refundReference());
         return switch (deal.proceeds()) {
             case LAND_GRANT -> payments.refundLandGrant(deal.buyer(), deal.currency(), deal.amount(), deal.refundReference());
             case SELLER -> payments.refundSeller(deal.payee(), deal.buyer(), deal.currency(), deal.amount(), deal.refundReference());

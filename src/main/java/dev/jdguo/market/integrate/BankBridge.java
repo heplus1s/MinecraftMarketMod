@@ -52,6 +52,12 @@ public final class BankBridge {
         }
 
         @Override
+        public SettlementResult refundGovernmentResale(UUID buyer, String currency, BigInteger amount, String reference) {
+            return reflect(BankHookSpec.REFUND_LAND_GRANT, new Class<?>[]{UUID.class, String.class, BigInteger.class, String.class},
+                    new Object[]{buyer, currency, amount, reference}, "government_resale_missing");
+        }
+
+        @Override
         public SettlementResult finalizeGovernmentResale(String reference) {
             return reflect("completeLandPurchase", new Class<?>[]{String.class}, new Object[]{reference}, "finalize_unavailable");
         }
@@ -132,6 +138,8 @@ public final class BankBridge {
         try {
             Class<?> type = Class.forName(BankHookSpec.BANK_CLASS);
             type.getMethod("completeLandPurchase", String.class);
+            type.getMethod("marketReceipt", String.class);
+            type.getMethod(BankHookSpec.REFUND_LAND_GRANT, UUID.class, String.class, BigInteger.class, String.class);
             type.getMethod("creditLandGrantQuoted", UUID.class, String.class, BigInteger.class, String.class, String.class, String.class);
             return true;
         } catch (ReflectiveOperationException | LinkageError missing) { return false; }

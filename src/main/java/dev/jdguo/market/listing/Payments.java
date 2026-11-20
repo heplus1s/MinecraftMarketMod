@@ -23,6 +23,10 @@ public interface Payments {
         return SettlementResult.fail("government_resale_missing", "");
     }
 
+    default SettlementResult refundGovernmentResale(UUID buyer, String currency, BigInteger amount, String reference) {
+        return SettlementResult.fail("government_resale_missing", "");
+    }
+
     default SettlementResult finalizeGovernmentResale(String reference) {
         return SettlementResult.fail("government_resale_missing", "");
     }
