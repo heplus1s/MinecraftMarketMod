@@ -12,16 +12,19 @@ import dev.jdguo.market.listing.DimensionFirstSalePolicy;
 import dev.jdguo.market.world.InitialLandSettings;
 import dev.jdguo.market.api.SettlementResult;
 import dev.jdguo.market.integrate.BankBridge;
+import dev.jdguo.market.integrate.SystemShopBulk;
 import dev.jdguo.market.net.MarketSync;
 import dev.jdguo.market.service.MarketDesk;
 import dev.jdguo.market.ui.MarketReply;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.command.CommandRegistryAccess;
+import net.minecraft.command.argument.IdentifierArgumentType;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.ClickEvent;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
@@ -43,6 +46,14 @@ public final class MarketCommands {
                 .executes(MarketCommands::usage)
                 .then(personalNoteCommands())
                 .then(dimensionPriceCommands())
+                .then(CommandManager.literal(MarketCommandNames.SYSTEM_BULK).requires(MarketCommands::player)
+                        .then(CommandManager.argument("item", IdentifierArgumentType.identifier())
+                                .suggests(MarketCommands::suggestItems)
+                                .executes(MarketCommands::quoteSystemBulk)))
+                .then(CommandManager.literal(MarketCommandNames.SYSTEM_BULK_CONFIRM).requires(MarketCommands::player)
+                        .then(CommandManager.argument("item", IdentifierArgumentType.identifier())
+                                .then(CommandManager.argument("token", StringArgumentType.word())
+                                        .executes(MarketCommands::confirmSystemBulk))))
                 .then(CommandManager.literal("audit").requires(source -> source.hasPermissionLevel(2)).executes(context -> {
                     var book = MarketDesk.get(context.getSource().getServer()).book();
                     int count = 0;
@@ -134,6 +145,42 @@ public final class MarketCommands {
                                 .executes(context -> reply(context, desk(context).search(player(context), "land", "", 1)))
                                 .then(CommandManager.argument("page", IntegerArgumentType.integer(1))
                                         .executes(context -> reply(context, desk(context).search(player(context), "land", "", IntegerArgumentType.getInteger(context, "page"))))))));
+    }
+
+    private static int quoteSystemBulk(CommandContext<ServerCommandSource> context) {
+        String item = IdentifierArgumentType.getIdentifier(context, "item").toString();
+        var result = SystemShopBulk.quote(player(context).getUuid(), item);
+        var source = context.getSource();
+        if (!result.ok()) {
+            source.sendError(Text.literal(result.message()));
+            return 0;
+        }
+        String command = "/" + MarketCommandNames.ROOT + " " + MarketCommandNames.SYSTEM_BULK_CONFIRM
+                + " " + item + " " + result.confirmation();
+        var button = Text.literal("[确认出售]").styled(style -> style.withClickEvent(
+                new ClickEvent(ClickEvent.Action.RUN_COMMAND, command)));
+        source.sendFeedback(() -> Text.literal("向系统商店出售 " + result.itemName() + " × " + result.count()
+                + "，实收 " + result.total() + " " + result.currency() + "。潜影盒保留。 ")
+                .append(button), false);
+        return 1;
+    }
+
+    private static int confirmSystemBulk(CommandContext<ServerCommandSource> context) {
+        var source = context.getSource();
+        String item = IdentifierArgumentType.getIdentifier(context, "item").toString();
+        String token = StringArgumentType.getString(context, "token");
+        var result = SystemShopBulk.execute(player(context).getUuid(), item, token);
+        if (!result.ok()) {
+            source.sendError(Text.literal(result.message()));
+            return 0;
+        }
+        source.sendFeedback(() -> Text.literal(result.message().isBlank() ? "系统商店批量出售已完成。" : result.message()), false);
+        try {
+            MarketSync.broadcast(source.getServer());
+        } catch (RuntimeException refreshFailure) {
+            dev.jdguo.market.MarketMod.LOGGER.warn("System shop bulk sale completed; market refresh failed", refreshFailure);
+        }
+        return 1;
     }
 
     private static LiteralArgumentBuilder<ServerCommandSource> dimensionPriceCommands() {

@@ -17,4 +17,17 @@ public final class MarketItemPrices {
         }
         return MarketSavedData.get(server).book().recentItemUnitPrice(itemId, currency, System.currentTimeMillis());
     }
+
+    /**
+     * Qualified realized units in the last 24 hours, for inventory planning only.
+     * Zero means no reliable signal (including when the world or server thread is unavailable).
+     * This is traded volume, not net buy pressure or a quote.
+     */
+    public static long recentDemandUnits(String itemId, String currency) {
+        var server = MarketRuntime.server();
+        if (server == null || !server.isOnThread() || itemId == null || currency == null) {
+            return 0;
+        }
+        return MarketSavedData.get(server).book().recentDemandUnits(itemId, currency, System.currentTimeMillis());
+    }
 }

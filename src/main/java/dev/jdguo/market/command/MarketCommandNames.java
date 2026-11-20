@@ -21,13 +21,15 @@ public final class MarketCommandNames {
     public static final String CHUNK = "chunk";
     public static final String CHUNKS = "chunks";
     public static final String SERVER = "server";
+    public static final String SYSTEM_BULK = "systembulk";
+    public static final String SYSTEM_BULK_CONFIRM = "systembulkconfirm";
 
     public static final String USAGE =
-            "Usage: /market ui | offer <currency> <price|shop> [count] | list <price> [count] | list shop [count] | buy <id> | cancel <id> | search [page] | search item <item> [page] | search player <name> [page] | search land [page] | search mine [page] | info <id> | price | reload | land list parcel <price> | land list chunk <price> | land list chunks <price> <x1> <z1> <x2> <z2> | land server parcel <price> | land server chunk <price> | land server chunks <price> <x1> <z1> <x2> <z2> | land search [page]";
+            "Usage: /market ui | systembulk <item> | systembulkconfirm <item> <token> | offer <currency> <price|shop> [count] | list <price> [count] | list shop [count] | buy <id> | cancel <id> | search [page] | search item <item> [page] | search player <name> [page] | search land [page] | search mine [page] | info <id> | price | reload | land list parcel <price> | land list chunk <price> | land list chunks <price> <x1> <z1> <x2> <z2> | land server parcel <price> | land server chunk <price> | land server chunks <price> <x1> <z1> <x2> <z2> | land search [page]";
 
     public static final String[] LITERALS = {
             ROOT, LIST, SHOP, BUY, CANCEL, SEARCH, ITEM, PLAYER, LAND, MINE, INFO, PRICE, RELOAD,
-            PARCEL, CHUNK, CHUNKS, SERVER
+            PARCEL, CHUNK, CHUNKS, SERVER, SYSTEM_BULK, SYSTEM_BULK_CONFIRM
     };
 
     private MarketCommandNames() {

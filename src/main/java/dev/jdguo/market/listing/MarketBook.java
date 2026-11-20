@@ -10,6 +10,8 @@ import java.math.MathContext;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -26,6 +28,12 @@ import java.util.UUID;
 public final class MarketBook {
     public static final int VERSION = 1;
     public static final int TRADE_LIMIT = 2000;
+
+    private static final long ITEM_SIGNAL_WINDOW_MILLIS = Duration.ofHours(24).toMillis();
+    private static final int ITEM_SIGNAL_MIN_UNITS = 16;
+    private static final int ITEM_SIGNAL_MIN_PAIRS = 3;
+    private static final int DEMAND_PAIR_CAP = 64;
+    private static final int DEMAND_PARTICIPANT_CAP = 128;
 
     private static final Set<String> ROOT_KEYS = Set.of("version", "listings", "trades", "pending", "deals", "pendingDeliveryLocks", "landSaleSignals");
 
@@ -385,13 +393,69 @@ public final class MarketBook {
     }
 
     public BigDecimal recentItemUnitPrice(String itemId, String currency, long now) {
-        long cutoff = now - Duration.ofHours(24).toMillis();
-        List<PriceSample> samples = new ArrayList<>();
-        Set<Set<UUID>> counterparties = new java.util.HashSet<>();
+        List<ItemFill> fills = recentIndependentItemFills(itemId, currency, now);
+        Set<Set<UUID>> counterparties = new HashSet<>();
         long volume = 0;
+        for (ItemFill fill : fills) {
+            counterparties.add(fill.pair());
+            volume += fill.quantity();
+        }
+        if (volume < ITEM_SIGNAL_MIN_UNITS || counterparties.size() < ITEM_SIGNAL_MIN_PAIRS) {
+            return null;
+        }
+        List<PriceSample> samples = new ArrayList<>(fills.size());
+        for (ItemFill fill : fills) {
+            samples.add(new PriceSample(fill.total().divide(BigDecimal.valueOf(fill.quantity()), MathContext.DECIMAL128),
+                    fill.quantity()));
+        }
+        samples.sort(Comparator.comparing(PriceSample::unit));
+        long accumulated = 0;
+        for (PriceSample sample : samples) {
+            accumulated += sample.quantity();
+            if (accumulated >= (volume + 1) / 2) {
+                return sample.unit();
+            }
+        }
+        return null;
+    }
+
+    /** Capped independent player fills. Not a pressure or direction indicator. */
+    public long recentDemandUnits(String itemId, String currency, long now) {
+        List<ItemFill> fills = recentIndependentItemFills(itemId, currency, now);
+        Map<Set<UUID>, Integer> unitsByPair = new HashMap<>();
+        Map<UUID, Integer> unitsByParticipant = new HashMap<>();
+        Set<UUID> buyers = new HashSet<>();
+        Set<UUID> sellers = new HashSet<>();
+        long volume = 0;
+        // Prefer the latest completed fills when a pair or participant hits its cap.
+        for (int i = fills.size() - 1; i >= 0; i--) {
+            ItemFill fill = fills.get(i);
+            Set<UUID> pair = fill.pair();
+            int pairUsed = unitsByPair.getOrDefault(pair, 0);
+            int buyerUsed = unitsByParticipant.getOrDefault(fill.buyer(), 0);
+            int sellerUsed = unitsByParticipant.getOrDefault(fill.seller(), 0);
+            int units = Math.min(fill.quantity(), Math.min(DEMAND_PAIR_CAP - pairUsed,
+                    Math.min(DEMAND_PARTICIPANT_CAP - buyerUsed, DEMAND_PARTICIPANT_CAP - sellerUsed)));
+            if (units <= 0) continue;
+            unitsByPair.put(pair, pairUsed + units);
+            unitsByParticipant.put(fill.buyer(), buyerUsed + units);
+            unitsByParticipant.put(fill.seller(), sellerUsed + units);
+            buyers.add(fill.buyer());
+            sellers.add(fill.seller());
+            volume += units;
+        }
+        return volume >= ITEM_SIGNAL_MIN_UNITS && unitsByPair.size() >= ITEM_SIGNAL_MIN_PAIRS
+                && buyers.size() >= ITEM_SIGNAL_MIN_PAIRS && sellers.size() >= ITEM_SIGNAL_MIN_PAIRS ? volume : 0;
+    }
+
+    private List<ItemFill> recentIndependentItemFills(String itemId, String currency, long now) {
+        long cutoff = now - ITEM_SIGNAL_WINDOW_MILLIS;
+        List<ItemFill> samples = new ArrayList<>();
         for (NbtCompound trade : trades) {
             int count = trade.getInt("Count");
             if (!trade.getBoolean("IndependentPrice") || count <= 0
+                    || !ListingKind.ITEM.token().equals(trade.getString("Kind"))
+                    || !Proceeds.SELLER.token().equals(trade.getString("Proceeds"))
                     || !itemId.equals(trade.getString("ItemId")) || !currency.equals(trade.getString("Currency"))
                     || trade.getLong("At") < cutoff || trade.getLong("At") > now
                     || !trade.containsUuid("Buyer") || !trade.containsUuid("Seller")) {
@@ -411,26 +475,16 @@ public final class MarketBook {
             if (total.signum() <= 0) {
                 continue;
             }
-            counterparties.add(Set.of(buyer, seller));
-            samples.add(new PriceSample(total.divide(BigDecimal.valueOf(count), MathContext.DECIMAL128), count));
-            volume += count;
+            samples.add(new ItemFill(buyer, seller, total, count));
         }
-        if (volume < 16 || counterparties.size() < 3) {
-            return null;
-        }
-        samples.sort(Comparator.comparing(PriceSample::unit));
-        long accumulated = 0;
-        for (PriceSample sample : samples) {
-            accumulated += sample.quantity();
-            if (accumulated >= (volume + 1) / 2) {
-                return sample.unit();
-            }
-        }
-        return null;
+        return samples;
     }
 
-    private record PriceSample(BigDecimal unit, int quantity) {
+    private record ItemFill(UUID buyer, UUID seller, BigDecimal total, int quantity) {
+        Set<UUID> pair() { return Set.of(buyer, seller); }
     }
+
+    private record PriceSample(BigDecimal unit, int quantity) {}
 
     private void trimTrades() {
         while (trades.size() > TRADE_LIMIT) {
@@ -471,7 +525,7 @@ public final class MarketBook {
         tag.putInt("Count", listing == null ? 0 : listing.count());
         tag.putString("VariantKey", listing == null ? "unknown" : ItemVariants.key(listing.item()));
         tag.putLong("At", System.currentTimeMillis());
-        tag.putBoolean("IndependentPrice", listing != null && listing.kind() == ListingKind.ITEM
+        tag.putBoolean("IndependentPrice", listing != null && listing.kind() == ListingKind.ITEM && deal.proceeds() == Proceeds.SELLER
                 && listing.priceMode() == PriceMode.CUSTOM && listing.item().getCompound("tag").isEmpty());
         return tag;
     }
