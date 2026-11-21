@@ -273,6 +273,7 @@ public final class MarketSync {
         root.addProperty("maximumTotal", true);
         root.addProperty("partialItems", true);
         root.addProperty("systemShop", SystemShopChannel.available());
+        root.addProperty("systemRepurchaseList", true);
         root.addProperty("bulkLimit", 2304);
         root.addProperty("defaultCurrency", dev.jdguo.market.config.MarketConfig.get().currency());
         JsonArray currencies = new JsonArray();

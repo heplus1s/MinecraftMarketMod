@@ -90,10 +90,16 @@ public final class GovernmentRepurchase {
         throw new IllegalArgumentException("服务器领地模组尚不支持系统回购");
     }
 
+    /** Listing-level eligibility shared by the picker and the authoritative preview. */
+    public static boolean eligible(Listing listing) {
+        return listing.status() == ListingStatus.OPEN && listing.kind() != ListingKind.ITEM
+                && !listing.initialGrant() && listing.proceeds() == Proceeds.SELLER
+                && !OWNER_ID.equals(listing.seller()) && "note".equals(listing.currency());
+    }
+
     private static void validate(MinecraftServer server, Listing listing, UUID systemOwner) {
         if (listing.status() != ListingStatus.OPEN) throw new IllegalArgumentException("该挂牌正在交易，暂不能回购");
-        if (listing.kind() == ListingKind.ITEM || listing.initialGrant() || listing.proceeds() != Proceeds.SELLER
-                || listing.seller().equals(systemOwner) || !"note".equals(listing.currency()))
+        if (!eligible(listing) || listing.seller().equals(systemOwner))
             throw new IllegalArgumentException("只支持回购玩家以央行券挂牌的土地");
         var parcel = LandBridge.parcel(server, listing.parcelId());
         if (parcel == null || !parcel.owner().equals(listing.seller()) || !parcel.chunks().containsAll(listing.chunks())

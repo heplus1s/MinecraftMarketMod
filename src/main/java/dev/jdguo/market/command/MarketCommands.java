@@ -132,6 +132,10 @@ public final class MarketCommands {
                                 .executes(context -> { dev.jdguo.market.api.GovernmentSale.openStanding(player(context)); return 1; }))
                         .then(CommandManager.literal("repurchase")
                                 .requires(source -> source.hasPermissionLevel(2))
+                                .executes(context -> {
+                                    dev.jdguo.market.ui.GovernmentRepurchaseListScreen.open(player(context));
+                                    return 1;
+                                })
                                 .then(CommandManager.argument("id", StringArgumentType.word())
                                         .suggests(MarketCommands::suggestOpen)
                                         .executes(context -> {

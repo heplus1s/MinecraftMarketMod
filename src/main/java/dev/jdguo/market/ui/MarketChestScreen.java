@@ -220,6 +220,7 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
         icon(49, Items.CLOCK, "刷新 · 第 " + (page + 1) + "/" + pages + " 页", "共 " + listings.size() + " 笔挂牌");
         icon(50, Items.PLAYER_HEAD, "当前模式：个人", "买入从个人银行储蓄扣款");
         if (viewer.hasPermissionLevel(2)) icon(51, Items.GRASS_BLOCK, "切换：服务器用地", "管理脚下服务器宗地，OP 2 代办", "只打开表单，不改变普通购买身份");
+        if (viewer.hasPermissionLevel(2)) icon(52, Items.GOLD_BLOCK, "系统回购列表", "只预览，不扣款");
         icon(53, Items.BARRIER, "关闭"); sendContentUpdates();
     }
     private void renderSell() {
@@ -301,6 +302,12 @@ public final class MarketChestScreen extends GenericContainerScreenHandler {
             case 46 -> { page++; selected = null; }
             case 47 -> { mine = !mine; page = 0; selected = null; }
             case 48 -> { landTarget = null; landChunks = List.of(); sellKind = 0; selling = true; count = 1; }
+            case 52 -> {
+                if (viewer.hasPermissionLevel(2)) {
+                    GovernmentRepurchaseListScreen.open(viewer);
+                    return;
+                }
+            }
             case 43 -> {
                 if (selected != null && viewer.hasPermissionLevel(2)) {
                     GovernmentRepurchaseScreen.open(viewer, selected.toString());

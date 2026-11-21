@@ -26,18 +26,24 @@ public final class GovernmentRepurchaseScreen extends GenericContainerScreenHand
     private final Listing listing;
     private int page;
     private boolean consumed;
+    private final boolean fromList;
 
     private GovernmentRepurchaseScreen(int id, PlayerInventory inventory, ServerPlayerEntity viewer,
-                                       SimpleInventory menu, GovernmentRepurchase.Snapshot snapshot) {
+                                       SimpleInventory menu, GovernmentRepurchase.Snapshot snapshot, boolean fromList) {
         super(ScreenHandlerType.GENERIC_9X6, id, inventory, menu, 6);
         this.viewer = viewer;
         this.menu = menu;
         this.snapshot = snapshot;
         this.listing = snapshot.listing();
+        this.fromList = fromList;
         render();
     }
 
     public static void open(ServerPlayerEntity player, String listingId) {
+        open(player, listingId, false);
+    }
+
+    static void open(ServerPlayerEntity player, String listingId, boolean fromList) {
         if (!player.hasPermissionLevel(2)) {
             player.sendMessage(Text.literal("系统代办回购需要 OP 2 权限。"), false);
             return;
@@ -45,7 +51,7 @@ public final class GovernmentRepurchaseScreen extends GenericContainerScreenHand
         try {
             var quote = GovernmentRepurchase.preview(player, listingId);
             player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, inv, who) ->
-                    new GovernmentRepurchaseScreen(id, inv, player, new SimpleInventory(54), quote),
+                    new GovernmentRepurchaseScreen(id, inv, player, new SimpleInventory(54), quote, fromList),
                     Text.literal("系统土地回购 · 确认前不扣款")));
         } catch (IllegalArgumentException failure) {
             player.sendMessage(Text.literal(failure.getMessage()), false);
@@ -92,7 +98,7 @@ public final class GovernmentRepurchaseScreen extends GenericContainerScreenHand
                 "支付 " + snapshot.total() + " " + MarketMessages.currency(listing.currency()),
                 "收款卖方 " + listing.sellerName(), "卖方 UUID " + listing.seller(),
                 "从 land_grant 支付，以上全部区块过户服务器用地", "仅点击本按钮才提交；不能重复确认");
-        icon(51, Items.ARROW, "取消并返回市场");
+        icon(51, Items.ARROW, fromList ? "取消并返回回购列表" : "取消并返回市场");
         icon(53, Items.BARRIER, "取消并关闭");
         sendContentUpdates();
     }
@@ -103,7 +109,10 @@ public final class GovernmentRepurchaseScreen extends GenericContainerScreenHand
         if (slot == 53 || slot == 51) {
             consumed = true;
             viewer.closeHandledScreen();
-            if (slot == 51) MarketChestScreen.open(viewer);
+            if (slot == 51) {
+                if (fromList) GovernmentRepurchaseListScreen.open(viewer);
+                else MarketChestScreen.open(viewer);
+            }
             return;
         }
         if (!viewer.hasPermissionLevel(2)) {

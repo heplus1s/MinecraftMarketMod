@@ -20,6 +20,21 @@ class GovernmentRepurchaseWiringTest {
         assertFalse(entry.contains("GovernmentRepurchase.confirm"));
     }
 
+    @Test void dedicatedListHasNoSettlementAndPreservesExactListingId() throws Exception {
+        String cmd = source("command/MarketCommands.java");
+        assertTrue(cmd.contains("GovernmentRepurchaseListScreen.open(player(context))"));
+        String list = source("ui/GovernmentRepurchaseListScreen.java");
+        assertTrue(list.contains("viewer.currentScreenHandler != this || !canUse(player)"));
+        assertTrue(list.contains("viewer.hasPermissionLevel(2)"));
+        assertTrue(list.contains("GovernmentRepurchase::eligible"));
+        assertTrue(list.contains("shown.add(listing.id())"));
+        assertTrue(list.contains("GovernmentRepurchaseScreen.open(viewer, shown.get(slot).toString(), true)"));
+        assertFalse(list.contains("GovernmentRepurchase.confirm"));
+        String client = Files.readString(Path.of("src/client/java/dev/jdguo/market/ui/MarketScreen.java"));
+        assertTrue(client.contains("sendChatCommand(\"market land repurchase\")"));
+        assertTrue(client.contains("systemRepurchaseList"));
+    }
+
     @Test void screenUsesVanillaPacketsAndSingleUsePermissionGuard() throws Exception {
         String screen = source("ui/GovernmentRepurchaseScreen.java");
         assertTrue(screen.contains("ScreenHandlerType.GENERIC_9X6"));

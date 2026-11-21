@@ -128,6 +128,16 @@ public final class MarketScreen extends Screen {
             }catch(RuntimeException ex){notice="数量须为正整数且不超过卖单剩余量；无报价不能成交。";confirming=false;}});buy.active=row!=null&&!pending;
         if(landMode){
             if(client.player!=null&&client.player.hasPermissionLevel(2)) {
+                var repurchase = button("系统回购",sx,y+20,w,()->{
+                    if(client.getNetworkHandler()!=null){
+                        client.setScreen(null);
+                        client.getNetworkHandler().sendChatCommand("market land repurchase");
+                    }
+                });
+                repurchase.active=Boolean.parseBoolean(text(data,"systemRepurchaseList"))&&!pending;
+                repurchase.setTooltip(Tooltip.of(Text.literal(repurchase.active
+                        ?"查看玩家以央行券挂牌的领地；确认前不会扣款"
+                        :"需要支持回购列表的市场服务端，或等待当前操作结束")));
                 button("个人 → 服务器用地",sx,y+52,w,()->{
                     if(client.getNetworkHandler()!=null){client.setScreen(null);client.getNetworkHandler().sendChatCommand("market land servermode");}
                 }).setTooltip(Tooltip.of(Text.literal("OP 2：管理脚下服务器宗地；普通市场买入仍使用个人账户")));
@@ -175,7 +185,7 @@ public final class MarketScreen extends Screen {
 
         var b=layout.book();panel(c,b,landMode?"转让挂牌 / 总价":"系统报价 / 玩家卖盘");if(offers().isEmpty())line(c,"暂无玩家卖单",b.x()+6,b.y()+(landMode?28:76),b.width()-12,0xff8f9baa);line(c,"玩家卖盘",b.x()+61,b.y()+b.height()-19,b.width()-66,0xff8f9baa);
         var o=layout.order();panel(c,o,"");int w=(o.width()-20)/2,x=o.x()+5,sx=x+w+8,y=o.y();c.fill(sx-5,y+5,sx-4,y+o.height()-5,0xff2b3543);
-        line(c,"买入 / 选中卖单",x,y+8,w,0xff19cc9e);line(c,landMode?"出售 / 脚下整宗领地":"卖出 / 主手物品",sx,y+8,w,0xfff05a71);line(c,landMode?(offer()==null?"请选择挂牌范围":landScope(offer())):"数量",x,y+34,landMode?w:27,0xff99abbc);if(landMode)line(c,"打开表单填写售价",sx,y+34,w,0xff99abbc);else line(c,"数量",sx,y+59,27,0xff99abbc);
+        line(c,"买入 / 选中卖单",x,y+8,w,0xff19cc9e);line(c,landMode?"出售 / 脚下整宗领地":"卖出 / 主手物品",sx,y+8,w,0xfff05a71);line(c,landMode?(offer()==null?"请选择挂牌范围":landScope(offer())):"数量",x,y+34,landMode?w:27,0xff99abbc);if(landMode)line(c,"打开表单填写售价",sx,y+40,w,0xff99abbc);else line(c,"数量",sx,y+59,27,0xff99abbc);
         var row=offer();String total="—";try{if(row!=null)total=item(row)?new BigInteger(text(row,"unitPrice")).multiply(new BigInteger(buyCount)).toString():text(row,"totalPrice");}catch(RuntimeException ignored){}
         line(c,"合计 "+total+" "+currencyLabel(currency),x,y+55,w,0xff19cc9e);line(c,row==null?"请点击右上方卖单":attributes(row),x,y+71,w,0xff99abbc);line(c,landMode?"领地按整笔购买":"银行扣款 · 可部分成交",x,y+89,w,0xff99abbc);
         String held=client!=null&&client.player!=null?client.player.getMainHandStack().getName().getString():"—";line(c,landMode?"请站在自己拥有的领地内":"当前主手: "+held,sx,y+78,w,0xff99abbc);line(c,(landMode?"整宗总价 · ":"同属性库存 · ")+currencyLabel(currency),sx,y+91,w,0xff99abbc);
