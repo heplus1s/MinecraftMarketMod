@@ -31,8 +31,24 @@ class GovernmentRepurchaseWiringTest {
         assertTrue(list.contains("GovernmentRepurchaseScreen.open(viewer, shown.get(slot).toString(), true)"));
         assertFalse(list.contains("GovernmentRepurchase.confirm"));
         String client = Files.readString(Path.of("src/client/java/dev/jdguo/market/ui/MarketScreen.java"));
-        assertTrue(client.contains("sendChatCommand(\"market land repurchase\")"));
-        assertTrue(client.contains("systemRepurchaseList"));
+        assertTrue(client.contains("new GovernmentRepurchaseClientScreen(this)"));
+        assertTrue(client.contains("nativeSystemRepurchase"));
+        assertFalse(client.contains("sendChatCommand(\"market land repurchase\")"));
+    }
+
+    @Test void nativeUiHasAuthorizationAndSeparateSingleUseQuote() throws Exception {
+        String channel = source("net/GovernmentRepurchaseChannel.java");
+        assertTrue(channel.contains("!player.hasPermissionLevel(2)"));
+        assertTrue(channel.contains("GovernmentRepurchase::eligible"));
+        assertTrue(channel.contains("GovernmentRepurchase.preview(player, value)"));
+        assertTrue(channel.contains("GovernmentRepurchase.confirmToken(player, UUID.fromString(value))"));
+        String settlement = source("api/GovernmentRepurchase.java");
+        assertTrue(settlement.contains("snapshot.token().equals(token)"));
+        assertTrue(settlement.indexOf("PREVIEWS.remove(player.getUuid())") < settlement.indexOf("Checkout.buyGovernment("));
+        String client = Files.readString(Path.of("src/client/java/dev/jdguo/market/ui/GovernmentRepurchaseClientScreen.java"));
+        assertTrue(client.contains("extends Screen"));
+        assertFalse(client.contains("GenericContainer"));
+        assertTrue(client.contains("waiting == 0 && !token.isBlank()"));
     }
 
     @Test void screenUsesVanillaPacketsAndSingleUsePermissionGuard() throws Exception {

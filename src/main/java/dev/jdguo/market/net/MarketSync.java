@@ -125,6 +125,7 @@ public final class MarketSync {
             PersonalMarketChannel.act(player, parts); return;
         }
         if (parts[0].equals("shopquote") || parts[0].equals("shopconfirm")) { SystemShopChannel.act(player, parts); return; }
+        if (parts[0].equals("repurchaseui")) { GovernmentRepurchaseChannel.act(player, parts); return; }
         if (parts[0].equals("landform")) {
             var pos = player.getChunkPos();
             String dimension = player.getWorld().getRegistryKey().getValue().toString();
@@ -274,6 +275,7 @@ public final class MarketSync {
         root.addProperty("partialItems", true);
         root.addProperty("systemShop", SystemShopChannel.available());
         root.addProperty("systemRepurchaseList", true);
+        root.addProperty("nativeSystemRepurchase", true);
         root.addProperty("bulkLimit", 2304);
         root.addProperty("defaultCurrency", dev.jdguo.market.config.MarketConfig.get().currency());
         JsonArray currencies = new JsonArray();
@@ -383,7 +385,7 @@ public final class MarketSync {
         }
     }
 
-    private static void send(ServerPlayerEntity player, Identifier channel, String json) {
+    static void send(ServerPlayerEntity player, Identifier channel, String json) {
         if (!ServerPlayNetworking.canSend(player, channel) || json.length() > 200000) {
             return;
         }

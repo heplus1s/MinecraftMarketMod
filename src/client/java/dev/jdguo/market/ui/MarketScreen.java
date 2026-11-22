@@ -129,15 +129,14 @@ public final class MarketScreen extends Screen {
         if(landMode){
             if(client.player!=null&&client.player.hasPermissionLevel(2)) {
                 var repurchase = button("系统回购",sx,y+20,w,()->{
-                    if(client.getNetworkHandler()!=null){
-                        client.setScreen(null);
-                        client.getNetworkHandler().sendChatCommand("market land repurchase");
-                    }
+                    var screen = new GovernmentRepurchaseClientScreen(this);
+                    client.setScreen(screen);
+                    screen.load();
                 });
-                repurchase.active=Boolean.parseBoolean(text(data,"systemRepurchaseList"))&&!pending;
+                repurchase.active=Boolean.parseBoolean(text(data,"nativeSystemRepurchase"))&&!pending;
                 repurchase.setTooltip(Tooltip.of(Text.literal(repurchase.active
                         ?"查看玩家以央行券挂牌的领地；确认前不会扣款"
-                        :"需要支持回购列表的市场服务端，或等待当前操作结束")));
+                        :"原生回购页面需要更新市场模组服务端")));
                 button("个人 → 服务器用地",sx,y+52,w,()->{
                     if(client.getNetworkHandler()!=null){client.setScreen(null);client.getNetworkHandler().sendChatCommand("market land servermode");}
                 }).setTooltip(Tooltip.of(Text.literal("OP 2：管理脚下服务器宗地；普通市场买入仍使用个人账户")));

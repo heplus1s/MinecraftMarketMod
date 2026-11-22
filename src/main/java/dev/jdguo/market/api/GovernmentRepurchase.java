@@ -27,7 +27,7 @@ public final class GovernmentRepurchase {
     private static final Map<UUID, Snapshot> PREVIEWS = new HashMap<>();
     private GovernmentRepurchase() {}
 
-    public record Snapshot(Listing listing, BigInteger total, UUID buyer, MinecraftServer server, long opened) {}
+    public record Snapshot(Listing listing, BigInteger total, UUID buyer, MinecraftServer server, long opened, UUID token) {}
 
     public static Snapshot preview(ServerPlayerEntity player, String listingId) {
         MinecraftServer server = authorize(player);
@@ -37,9 +37,16 @@ public final class GovernmentRepurchase {
         if (found.listing() == null) throw new IllegalArgumentException(found.ambiguous() ? "挂牌编号不唯一" : "找不到该挂牌");
         UUID buyer = owner();
         validate(server, found.listing(), buyer);
-        var snapshot = new Snapshot(found.listing(), found.listing().customTotal(), buyer, server, now);
+        var snapshot = new Snapshot(found.listing(), found.listing().customTotal(), buyer, server, now, UUID.randomUUID());
         PREVIEWS.put(player.getUuid(), snapshot);
         return snapshot;
+    }
+
+    public static String confirmToken(ServerPlayerEntity player, UUID token) {
+        authorize(player);
+        var snapshot = PREVIEWS.get(player.getUuid());
+        if (snapshot == null || !snapshot.token().equals(token)) return "回购预览已失效，请重新预览";
+        return confirm(player, snapshot);
     }
 
     public static String confirm(ServerPlayerEntity player, Snapshot snapshot) {

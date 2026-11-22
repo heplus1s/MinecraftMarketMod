@@ -58,6 +58,22 @@ public final class MarketUiClient implements ClientModInitializer {
             try { json = buf.readString(32767); } catch (RuntimeException malformed) { return; }
             client.execute(()->{if(client.getNetworkHandler()!=handler||client.player==null)return;try{if(client.currentScreen instanceof SystemShopScreen screen)screen.accept(JsonParser.parseString(json).getAsJsonObject());}catch(RuntimeException invalid){invalidPacket(client,invalid);}});
         });
+        ClientPlayNetworking.registerGlobalReceiver(new Identifier("marketmod", "repurchase_ui"), (client, handler, buf, response) -> {
+            String json;
+            try { json = buf.readString(262144); } catch (RuntimeException malformed) { return; }
+            client.execute(() -> {
+                if (client.getNetworkHandler() != handler || client.player == null) return;
+                try {
+                    JsonObject packet = JsonParser.parseString(json).getAsJsonObject();
+                    if (client.currentScreen instanceof GovernmentRepurchaseClientScreen screen) screen.accept(packet);
+                    else if (Boolean.parseBoolean(MarketScreen.text(packet, "open"))) {
+                        var screen = new GovernmentRepurchaseClientScreen(client.currentScreen instanceof MarketScreen ? client.currentScreen : null);
+                        client.setScreen(screen);
+                        screen.accept(packet);
+                    }
+                } catch (RuntimeException invalid) { invalidPacket(client, invalid); }
+            });
+        });
         LandConfirmScreen.register();
         ClientPlayNetworking.registerGlobalReceiver(SYNC, (client, handler, buf, response) -> {
             String json;

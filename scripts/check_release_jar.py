@@ -1,13 +1,15 @@
 import json,zipfile,pathlib
 root=pathlib.Path(__file__).resolve().parents[1]
 meta=json.loads((root/'src/main/resources/fabric.mod.json').read_text())
-jar=root/('build/libs/'+meta['id']+'-1.0.17.jar')
+jar=root/('build/libs/'+meta['id']+'-1.0.18.jar')
 with zipfile.ZipFile(jar) as z:
  m=json.loads(z.read('fabric.mod.json'))
- assert m['version']=='1.0.17'
+ assert m['version']=='1.0.18'
  assert m['environment']=='*'
  assert not m.get('jars'), 'Do not nest standalone UI artifacts'
  for entry in m['entrypoints']['main']+m['entrypoints']['client']:
   assert entry.replace('.','/')+'.class' in z.namelist(),entry
  assert m['breaks'][m['id']+'-ui']=='*'
+ assert 'dev/jdguo/market/ui/GovernmentRepurchaseClientScreen.class' in z.namelist()
+ assert 'dev/jdguo/market/net/GovernmentRepurchaseChannel.class' in z.namelist()
  print('PASS release jar manifest and entrypoints:',jar.name)

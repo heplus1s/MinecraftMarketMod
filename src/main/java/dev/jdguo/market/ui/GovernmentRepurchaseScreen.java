@@ -48,6 +48,10 @@ public final class GovernmentRepurchaseScreen extends GenericContainerScreenHand
             player.sendMessage(Text.literal("系统代办回购需要 OP 2 权限。"), false);
             return;
         }
+        if (dev.jdguo.market.net.GovernmentRepurchaseChannel.supports(player)) {
+            dev.jdguo.market.net.GovernmentRepurchaseChannel.open(player, listingId);
+            return;
+        }
         try {
             var quote = GovernmentRepurchase.preview(player, listingId);
             player.openHandledScreen(new SimpleNamedScreenHandlerFactory((id, inv, who) ->

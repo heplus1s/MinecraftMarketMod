@@ -47,6 +47,10 @@ public final class GovernmentRepurchaseListScreen extends GenericContainerScreen
             viewer.sendMessage(Text.literal("系统回购需要 OP 2 权限。"), false);
             return;
         }
+        if (dev.jdguo.market.net.GovernmentRepurchaseChannel.supports(viewer)) {
+            dev.jdguo.market.net.GovernmentRepurchaseChannel.open(viewer, null);
+            return;
+        }
         viewer.openHandledScreen(new SimpleNamedScreenHandlerFactory(
                 (id, inventory, player) -> new GovernmentRepurchaseListScreen(id, inventory, viewer),
                 Text.literal("系统回购 · 玩家领地挂牌")));
